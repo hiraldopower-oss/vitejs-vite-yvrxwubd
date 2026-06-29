@@ -70,12 +70,17 @@ function fmtMoney(n) { return "RD$" + Number(n).toLocaleString("es-DO"); }
 /* ---- Countdown ---- */
 function Countdown({ fechaStr }) {
   const calc = () => {
-    const diff = Math.max(0, new Date(fechaStr) - new Date());
+    // Parsear como medianoche hora local (no UTC)
+    const [y,m,d] = fechaStr.split("-").map(Number);
+    const fechaLocal = new Date(y, m-1, d, 23, 59, 59);
+    const diff = Math.max(0, fechaLocal - new Date());
     return { d: Math.floor(diff/86400000), h: Math.floor((diff%86400000)/3600000), m: Math.floor((diff%3600000)/60000), s: Math.floor((diff%60000)/1000) };
   };
   const [t, setT] = useState(calc);
   useEffect(() => { const id = setInterval(() => setT(calc()), 1000); return () => clearInterval(id); }, []);
-  const dias = Math.ceil((new Date(fechaStr) - new Date()) / 86400000);
+  const [_y,_m,_d] = fechaStr.split("-").map(Number);
+  const _fechaLocal = new Date(_y, _m-1, _d, 23, 59, 59);
+  const dias = Math.ceil((_fechaLocal - new Date()) / 86400000);
   const urg = dias <= 3;
   return (
     <div style={{ background: urg ? "rgba(245,158,11,0.05)" : "#0D0F12", border: `1px solid ${urg ? "rgba(245,158,11,0.4)" : "#232830"}`, borderRadius: 8, padding: "8px 12px" }}>
@@ -134,7 +139,7 @@ function RifaCard({ rifa, vendidosCount, onJugar }) {
         <div style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 18, lineHeight: 1.2 }}>{rifa.titulo}</div>
         {rifa.subtitulo && <div style={{ fontSize: 11, color: "#9AA1AC" }}>{rifa.subtitulo}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#22c55e", fontWeight: 700 }}>
-          <Clock size={11} /> Fecha sorteo: <strong>{new Date(rifa.fechaSorteo).toLocaleDateString("es-DO", { day:"2-digit", month:"2-digit", year:"numeric" })}</strong>
+          <Clock size={11} /> Fecha sorteo: <strong>{(() => { const [y,m,d]=rifa.fechaSorteo.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"}); })()}</strong>
         </div>
         {!agotada && <Countdown fechaStr={rifa.fechaSorteo} />}
         <ProgressBar vendidos={vendidosCount} total={rifa.totalBoletos} />
