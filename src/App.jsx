@@ -999,9 +999,7 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
             showToast("¡Compra recibida! Validaremos tu pago en máximo 24 horas.","ok");
           }} />
       )}
-        </main>
-      </div>
-    </div>
+    </main>
   );
 }
 
