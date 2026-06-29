@@ -1,11 +1,31 @@
 import { useState, useEffect, useRef } from "react";
 import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X } from "lucide-react";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDhR3k-9T_QkJmhZQCrjckPsy0z2vNTlgo",
+  authDomain: "hiraldo-power.firebaseapp.com",
+  projectId: "hiraldo-power",
+  storageBucket: "hiraldo-power.firebasestorage.app",
+  messagingSenderId: "435721767032",
+  appId: "1:435721767032:web:9032ec6acac0a269e6058d"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
 
 const dbGet = async (key, def) => {
-  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : def; } catch { return def; }
+  try {
+    const snap = await getDoc(doc(db, "hiraldopower", key));
+    return snap.exists() ? snap.data().value : def;
+  } catch { return def; }
 };
+
 const dbSet = async (key, val) => {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+  try {
+    await setDoc(doc(db, "hiraldopower", key), { value: val });
+  } catch {}
 };
 
 /* ============================================================
