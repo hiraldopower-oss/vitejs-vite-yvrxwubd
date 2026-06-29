@@ -549,9 +549,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const load = async (key, def) => {
       const load = async (key, def) => { return await dbGet(key, def); };
-      };
       const generarBoletos = () => { const o={}; for(let i=0;i<1000;i++) o[String(i).padStart(3,"0")]=null; return o; };
       const bRaw = await load("tickets", null);
       const b = (bRaw && Object.keys(bRaw).length>0) ? bRaw : generarBoletos();
