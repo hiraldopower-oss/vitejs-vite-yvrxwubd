@@ -68,18 +68,20 @@ const METODOS_PAGO_INICIALES = [
 function fmtMoney(n) { return "RD$" + Number(n).toLocaleString("es-DO"); }
 
 /* ---- Countdown ---- */
-function Countdown({ fechaStr }) {
+function Countdown({ fechaStr, hora }) {
   const calc = () => {
-    // Parsear como medianoche hora local (no UTC)
+    // Parsear como hora local de RD
     const [y,m,d] = fechaStr.split("-").map(Number);
-    const fechaLocal = new Date(y, m-1, d, 23, 59, 59);
+    const [hh,mm] = (hora||"23:59").split(":").map(Number);
+    const fechaLocal = new Date(y, m-1, d, hh, mm, 0);
     const diff = Math.max(0, fechaLocal - new Date());
     return { d: Math.floor(diff/86400000), h: Math.floor((diff%86400000)/3600000), m: Math.floor((diff%3600000)/60000), s: Math.floor((diff%60000)/1000) };
   };
   const [t, setT] = useState(calc);
   useEffect(() => { const id = setInterval(() => setT(calc()), 1000); return () => clearInterval(id); }, []);
   const [_y,_m,_d] = fechaStr.split("-").map(Number);
-  const _fechaLocal = new Date(_y, _m-1, _d, 23, 59, 59);
+  const [_hh,_mm] = (hora||"23:59").split(":").map(Number);
+  const _fechaLocal = new Date(_y, _m-1, _d, _hh, _mm, 0);
   const dias = Math.ceil((_fechaLocal - new Date()) / 86400000);
   const urg = dias <= 3;
   return (
@@ -139,9 +141,9 @@ function RifaCard({ rifa, vendidosCount, onJugar }) {
         <div style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 18, lineHeight: 1.2 }}>{rifa.titulo}</div>
         {rifa.subtitulo && <div style={{ fontSize: 11, color: "#9AA1AC" }}>{rifa.subtitulo}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#22c55e", fontWeight: 700 }}>
-          <Clock size={11} /> Fecha sorteo: <strong>{(() => { const [y,m,d]=rifa.fechaSorteo.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"}); })()}</strong>
+          <Clock size={11} /> Fecha sorteo: <strong>{(() => { const [y,m,d]=rifa.fechaSorteo.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"}); })()}{rifa.horaSorteo ? " · "+rifa.horaSorteo+" hrs" : ""}</strong>
         </div>
-        {!agotada && <Countdown fechaStr={rifa.fechaSorteo} />}
+        {!agotada && <Countdown fechaStr={rifa.fechaSorteo} hora={rifa.horaSorteo||"23:59"} />}
         <ProgressBar vendidos={vendidosCount} total={rifa.totalBoletos} />
         <div style={{ fontSize: 12, color: "#9AA1AC", lineHeight: 1.5 }}>{rifa.descripcion}</div>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: "auto", paddingTop: 8 }}>
@@ -426,7 +428,14 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
                 </select>
               </label>
 
-              {inp("FECHA DEL SORTEO *", "fechaSorteo", "date")}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+                {inp("FECHA DEL SORTEO *", "fechaSorteo", "date")}
+                <label style={{ display:"block" }}>
+                  <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>HORA DEL SORTEO *</span>
+                  <input type="time" value={form.horaSorteo||"20:00"} onChange={e=>set("horaSorteo",e.target.value)}
+                    style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+                </label>
+              </div>
 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:14 }}>
                 <label style={{ display:"block" }}>
