@@ -26,7 +26,11 @@ const dbGet = async (key, def) => {
 const dbSet = async (key, val) => {
   try {
     await setDoc(doc(db, "hiraldopower", key), { value: val });
-  } catch {}
+    return true;
+  } catch (e) {
+    console.error("Firebase dbSet error:", key, e?.message || e);
+    return false;
+  }
 };
 
 /* ============================================================
@@ -584,7 +588,7 @@ export default function App() {
     })();
   }, []);
 
-  const save = async (key, val, setter) => { setter(val); await dbSet(key, val); };
+  const save = async (key, val, setter) => { setter(val); const ok = await dbSet(key, val); return ok; };
   const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),3200); };
 
   const vendidosCount = Object.values(boletos).filter(Boolean).length;
@@ -779,7 +783,11 @@ function RifaDetalle({ rifa, boletos, setBoletos, pendientes, setPendientes, sho
         <CheckoutModal selected={cantidad} total={total} metodosPago={metodosPago} onClose={()=>setShowCheckout(false)}
           onConfirm={async(datos)=>{
             const nuevo={id:"P"+Date.now(),...datos,cantidad,total,fecha:new Date().toISOString(),estado:"pendiente"};
-            await setPendientes([...pendientes,nuevo]);
+            const ok = await setPendientes([...pendientes,nuevo]);
+            if(ok===false){
+              showToast("Error al guardar. Intenta de nuevo o contacta al organizador.","warn");
+              return;
+            }
             setShowCheckout(false); setCantidad(1);
             showToast("¡Compra recibida! Validaremos tu pago en máximo 24 horas.","ok");
           }} />
@@ -807,7 +815,22 @@ function CheckoutModal({ selected, total, onClose, onConfirm, metodosPago }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => setCaptura(ev.target.result);
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX = 800;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        setCaptura(canvas.toDataURL("image/jpeg", 0.6));
+      };
+      img.src = ev.target.result;
+    };
     reader.readAsDataURL(file);
   };
   return (
