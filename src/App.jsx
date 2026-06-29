@@ -987,6 +987,43 @@ export default function App() {
               <p style={{ color:"#9AA1AC", fontSize:16, maxWidth:560, margin:"0 auto", lineHeight:1.6 }}>{siteConfig.subtituloHero}</p>
             </div>
           </section>
+
+          {/* ── CÓMO FUNCIONA ── */}
+          <section style={{ borderBottom:"1px solid #232830", padding:"64px 60px", background:"#0D0F12" }}>
+            <div style={{ maxWidth:1000, margin:"0 auto" }}>
+              <div style={{ textAlign:"center", marginBottom:48 }}>
+                <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, fontWeight:800, letterSpacing:"1.5px", color:"#C6FF3D", background:"rgba(198,255,61,0.08)", border:"1px solid rgba(198,255,61,0.2)", padding:"7px 16px", borderRadius:999, marginBottom:16 }}>
+                  <ShieldCheck size={12}/> 100% VERIFICABLE
+                </div>
+                <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(26px,3vw,40px)", lineHeight:1.1 }}>¿CÓMO FUNCIONA?</h2>
+                <p style={{ color:"#9AA1AC", fontSize:15, marginTop:10 }}>Participar es fácil, rápido y seguro</p>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:24 }}>
+                {[
+                  { num:"01", icon:"🎟️", titulo:"Elige tu rifa", desc:"Selecciona el premio que quieres ganar y la cantidad de boletos que deseas." },
+                  { num:"02", icon:"💳", titulo:"Realiza tu pago", desc:"Transfiere por banco o paga en efectivo. Sube tu captura de comprobante." },
+                  { num:"03", icon:"✅", titulo:"Recibe tu número", desc:"Validamos tu pago en máximo 24 horas y te asignamos números al azar por WhatsApp." },
+                  { num:"04", icon:"🎲", titulo:"¡Espera el sorteo!", desc:"El sorteo se hace en vivo y en público. El ganador se anuncia aquí mismo." },
+                ].map(({ num, icon, titulo, desc }) => (
+                  <div key={num} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:"28px 22px", position:"relative", overflow:"hidden" }}>
+                    <div style={{ position:"absolute", top:16, right:16, fontFamily:"'Arial Black',sans-serif", fontSize:36, color:"rgba(198,255,61,0.06)", lineHeight:1 }}>{num}</div>
+                    <div style={{ fontSize:32, marginBottom:16 }}>{icon}</div>
+                    <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:8 }}>{titulo}</div>
+                    <div style={{ fontSize:13, color:"#9AA1AC", lineHeight:1.6 }}>{desc}</div>
+                  </div>
+                ))}
+              </div>
+              {/* CTA de WhatsApp dentro de la sección */}
+              <div style={{ marginTop:40, textAlign:"center" }}>
+                <a href="https://wa.me/18293108799?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20las%20rifas%20%F0%9F%8E%9F%EF%B8%8F" target="_blank" rel="noopener noreferrer"
+                  style={{ display:"inline-flex", alignItems:"center", gap:10, background:"#25D366", color:"#fff", fontWeight:800, fontSize:14, padding:"14px 28px", borderRadius:12, textDecoration:"none", boxShadow:"0 4px 20px rgba(37,211,102,0.3)" }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                  ¿Tienes dudas? Escríbenos por WhatsApp
+                </a>
+              </div>
+            </div>
+          </section>
+
           <section className="catalog-section" style={{ maxWidth:1600, margin:"0 auto", padding:"52px 60px" }}>
             {rifas.filter(r=>r.activa).length===0 && (
               <p style={{ color:"#9AA1AC", fontSize:14, textAlign:"center" }}>No hay rifas activas en este momento.</p>
@@ -1034,6 +1071,27 @@ export default function App() {
         <div><Zap size={14} style={{ color: siteConfig.colorAcento, verticalAlign:-2 }}/> <strong style={{ color:"#F2F2EF" }}>{siteConfig.marca}</strong></div>
         <p style={{ marginTop:6 }}>{siteConfig.footerTexto}</p>
       </footer>
+
+      {/* ── BOTÓN FLOTANTE WHATSAPP ── */}
+      {view !== "admin" && (
+        <a href="https://wa.me/18293108799?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20las%20rifas%20%F0%9F%8E%9F%EF%B8%8F"
+          target="_blank" rel="noopener noreferrer"
+          title="Escribenos por WhatsApp"
+          style={{
+            position:"fixed", bottom:24, right:24, zIndex:200,
+            width:60, height:60, borderRadius:"50%",
+            background:"#25D366",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:"0 4px 20px rgba(37,211,102,0.45)",
+            textDecoration:"none",
+            transition:"transform .2s, box-shadow .2s",
+          }}
+          onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.1)";e.currentTarget.style.boxShadow="0 6px 28px rgba(37,211,102,0.6)";}}
+          onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 4px 20px rgba(37,211,102,0.45)";}}
+        >
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        </a>
+      )}
     </div>
   );
 }
