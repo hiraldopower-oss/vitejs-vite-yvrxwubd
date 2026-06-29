@@ -831,9 +831,11 @@ export default function App() {
   );
 
   return (
-    <div style={{ background:"#0D0F12", color:"#F2F2EF", minHeight:"100vh", fontFamily:"'Inter',system-ui,sans-serif" }}>
+    <div style={{ background:"#0D0F12", color:"#F2F2EF", minHeight:"100vh", width:"100%", fontFamily:"'Inter',system-ui,sans-serif" }}>
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;}
+        html,body,#root{width:100%;min-height:100vh;background:#0D0F12;}
+        body{margin:0;padding:0;background:#0D0F12;}
         @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         button,input,select,textarea{font-family:inherit;}
