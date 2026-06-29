@@ -1527,6 +1527,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   const [formSitio, setFormSitio] = useState({ ...SITE_CONFIG_INICIAL, ...siteConfig });
   const [guardandoSitio, setGuardandoSitio] = useState(false);
   const [rifaSorteo, setRifaSorteo] = useState(rifas[0]?.id || null);
+  const [confirmandoHuerfanos, setConfirmandoHuerfanos] = useState(false);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1651,6 +1652,18 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
     showToast("Rifa y sus boletos eliminados","warn");
   };
 
+  // IDs de boletos guardados que ya no corresponden a ninguna rifa existente (rifas borradas antes de esta actualización)
+  const idsHuerfanos = Object.keys(boletos||{}).filter(rifaId => !rifas.find(r=>r.id===rifaId));
+  const totalHuerfanos = idsHuerfanos.reduce((s,id)=>s+Object.keys(boletos[id]||{}).length,0);
+
+  const limpiarHuerfanos = async () => {
+    const next = {...boletos};
+    idsHuerfanos.forEach(id => delete next[id]);
+    const ok = await saveBoletos(next);
+    if (ok===false) showToast("Error al limpiar. Intenta de nuevo.","warn");
+    else showToast(`${totalHuerfanos} boletos huérfanos eliminados ✓`,"ok");
+  };
+
   const TAB = ({id,label}) => (
     <button onClick={()=>setTabAdmin(id)} style={{ background:tabAdmin===id?"#C6FF3D":"#14171C", color:tabAdmin===id?"#0D0F12":"#9AA1AC", border:`1px solid ${tabAdmin===id?"#C6FF3D":"#232830"}`, fontWeight:700, fontSize:12, padding:"9px 18px", borderRadius:8, cursor:"pointer", letterSpacing:"0.4px" }}>{label}</button>
   );
@@ -1668,7 +1681,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       </div>
 
       {/* STATS */}
-      <div style={{ display:"flex", gap:24, marginBottom:28, flexWrap:"wrap" }}>
+      <div style={{ display:"flex", gap:24, marginBottom: totalHuerfanos>0?14:28, flexWrap:"wrap" }}>
         {[["vendidos",vendidosTodos.length,"#C6FF3D"],["pendientes",pendientesActivos.length,"#FF6B35"],["disponibles", Object.values(boletos||{}).reduce((s,pool)=>s+Object.values(pool||{}).filter(v=>!v).length,0),"#F2F2EF"],["rifas activas",rifas.filter(r=>r.activa).length,"#818cf8"]].map(([lbl,val,color])=>(
           <div key={lbl}>
             <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:28, color }}>{val}</div>
@@ -1676,6 +1689,12 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
           </div>
         ))}
       </div>
+
+      {totalHuerfanos > 0 && tabAdmin!=="rifas" && (
+        <button onClick={()=>setTabAdmin("rifas")} style={{ display:"flex", alignItems:"center", gap:8, background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.3)", color:"#f59e0b", fontSize:12, fontWeight:700, padding:"10px 14px", borderRadius:9, cursor:"pointer", marginBottom:24, width:"100%", textAlign:"left" }}>
+          <AlertCircle size={15} style={{ flexShrink:0 }}/> {totalHuerfanos} de esos "disponibles" son boletos huérfanos de una rifa ya borrada. Toca aquí para limpiarlos en "Gestionar rifas".
+        </button>
+      )}
 
       {/* TABS */}
       <div style={{ display:"flex", gap:8, marginBottom:28, flexWrap:"wrap" }}>
@@ -1733,6 +1752,30 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       {/* ---- TAB: GESTIONAR RIFAS ---- */}
       {tabAdmin==="rifas" && (
         <div>
+          {totalHuerfanos > 0 && (
+            <div style={{ background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:12, padding:16, marginBottom:18 }}>
+              <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+                <AlertCircle size={18} style={{ color:"#f59e0b", flexShrink:0, marginTop:2 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:700, fontSize:13, color:"#f59e0b" }}>Boletos huérfanos detectados</div>
+                  <div style={{ fontSize:12, color:"#9AA1AC", marginTop:4 }}>
+                    Hay {totalHuerfanos} boleto{totalHuerfanos!==1?"s":""} guardado{totalHuerfanos!==1?"s":""} de rifa{idsHuerfanos.length!==1?"s":""} que ya no existe{idsHuerfanos.length!==1?"n":""} (se borraron antes de esta actualización). No afectan a tus rifas actuales, pero puedes limpiarlos.
+                  </div>
+                  {!confirmandoHuerfanos ? (
+                    <button onClick={()=>setConfirmandoHuerfanos(true)} style={{ marginTop:10, background:"none", border:"1px solid rgba(245,158,11,0.4)", color:"#f59e0b", fontWeight:700, fontSize:12, padding:"8px 14px", borderRadius:8, cursor:"pointer" }}>
+                      <Trash2 size={13} style={{ verticalAlign:-2, marginRight:6 }}/> Limpiar boletos huérfanos
+                    </button>
+                  ) : (
+                    <div style={{ marginTop:10 }}>
+                      <ConfirmInline mensaje={`¿Eliminar los ${totalHuerfanos} boletos huérfanos? Esta acción no se puede deshacer.`}
+                        onSi={async()=>{ await limpiarHuerfanos(); setConfirmandoHuerfanos(false); }}
+                        onNo={()=>setConfirmandoHuerfanos(false)} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:18 }}>
             <button onClick={()=>setEditando("nueva")} style={{ display:"flex", alignItems:"center", gap:8, background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"11px 18px", borderRadius:10, cursor:"pointer" }}>
               <Plus size={16}/> Nueva rifa
