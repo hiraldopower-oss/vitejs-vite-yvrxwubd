@@ -590,6 +590,19 @@ export default function App() {
   const vendidosCount = Object.values(boletos).filter(Boolean).length;
   const pctGlobal = Math.round((vendidosCount/1000)*100);
 
+  const refreshFromFirebase = async () => {
+    try {
+      const p = await dbGet("pending", []);
+      const b = await dbGet("tickets", {});
+      const h = await dbGet("historial", []);
+      const r = await dbGet("rifas", RIFAS_INICIALES);
+      setPendientes(p);
+      setBoletos(b);
+      setHistorial(h);
+      setRifas(r);
+    } catch {}
+  };
+
   const irARifa = (rifa) => { setRifaActiva(rifa); setView("rifa"); };
 
   useEffect(() => {
@@ -598,6 +611,20 @@ export default function App() {
     window.addEventListener("hashchange", check);
     return () => window.removeEventListener("hashchange", check);
   }, []);
+
+  /* ---- Auto-refresh pendientes cuando el admin está abierto ---- */
+  useEffect(() => {
+    if (view !== "admin") return;
+    const intervalo = setInterval(async () => {
+      try {
+        const p = await dbGet("pending", []);
+        setPendientes(p);
+        const b = await dbGet("tickets", {});
+        setBoletos(b);
+      } catch {}
+    }, 20000); // cada 20 segundos
+    return () => clearInterval(intervalo);
+  }, [view]);
 
   if (!ready) return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#C6FF3D", gap:12, fontFamily:"'Arial Black',sans-serif", letterSpacing:1 }}>
@@ -710,6 +737,9 @@ export default function App() {
           pendientes={pendientes} savePendientes={p=>save("pending",p,setPendientes)}
           showToast={showToast} ganador={ganador} saveGanador={g=>save("ganador",g,setGanador)}
           historial={historial} saveHistorial={h=>save("historial",h,setHistorial)}
+          vendidosCount={vendidosCount} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
+          metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)}
+          onRefresh={refreshFromFirebase} />
           vendidosCount={vendidosCount} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
           metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)} />
       )}
@@ -1245,7 +1275,7 @@ function GanadorRow({ h, onEditar, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ganador, saveGanador, historial, saveHistorial, vendidosCount, rifas, saveRifas, metodosPago, saveMetodosPago }) {
+function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ganador, saveGanador, historial, saveHistorial, vendidosCount, rifas, saveRifas, metodosPago, saveMetodosPago, onRefresh }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [numSorteo, setNumSorteo] = useState("");
@@ -1255,6 +1285,14 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   const [editandoMetodo, setEditandoMetodo] = useState(null);
   const [editandoGanador, setEditandoGanador] = useState(null);
   const [tabAdmin, setTabAdmin] = useState("compras");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await onRefresh();
+    setRefreshing(false);
+    showToast("Datos actualizados ✓", "ok");
+  };
 
   const disponibles = Object.keys(boletos).filter(k=>!boletos[k]);
   const pendientesActivos = pendientes.filter(p=>p.estado==="pendiente");
@@ -1334,7 +1372,13 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
     <main style={{ maxWidth:1400, margin:"0 auto", padding:"40px 40px" }}>
       {editando && <EditorRifa rifa={editando==="nueva"?null:editando} onGuardar={guardarRifa} onCancelar={()=>setEditando(null)} />}
 
-      <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:22, marginBottom:20 }}>PANEL ADMIN</h2>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
+        <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:22 }}>PANEL ADMIN</h2>
+        <button onClick={handleRefresh} disabled={refreshing}
+          style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #C6FF3D", color:"#C6FF3D", fontWeight:700, fontSize:12, padding:"9px 16px", borderRadius:9, cursor:refreshing?"not-allowed":"pointer", opacity:refreshing?0.6:1 }}>
+          {refreshing ? "Actualizando…" : "↻ Actualizar datos"}
+        </button>
+      </div>
 
       {/* STATS */}
       <div style={{ display:"flex", gap:24, marginBottom:28, flexWrap:"wrap" }}>
