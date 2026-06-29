@@ -300,15 +300,23 @@ function ImageCropper({ src, onCrop, onCancelar }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const imgRef = useRef(null);
-  const ASPECT = 10 / 16; // height / width
+  const pinchRef = useRef(null); // distancia inicial del pellizco
+  const ASPECT = 10 / 16;
+  const MIN_SCALE = 0.1;
+  const MAX_SCALE = 5;
 
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
       imgRef.current = img;
-      setOffset({ x: 0, y: 0 });
-      setScale(1);
-      draw(img, { x: 0, y: 0 }, 1);
+      // Escala inicial: que la imagen cubra el ancho del canvas
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const initSc = canvas.width / img.width;
+      const initOff = { x: 0, y: (canvas.height - img.height * initSc) / 2 };
+      setOffset(initOff);
+      setScale(initSc);
+      draw(img, initOff, initSc);
     };
     img.src = src;
   }, [src]);
@@ -319,18 +327,18 @@ function ImageCropper({ src, onCrop, onCancelar }) {
     const W = canvas.width, H = canvas.height;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, W, H);
-    const iw = img.width * sc, ih = img.height * sc;
-    ctx.drawImage(img, off.x, off.y, iw, ih);
-    // overlay
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.drawImage(img, off.x, off.y, img.width * sc, img.height * sc);
+    // overlay oscuro
     const cropH = W * ASPECT;
     const cy = (H - cropH) / 2;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(0, 0, W, cy);
     ctx.fillRect(0, cy + cropH, W, H - cy - cropH);
+    // borde verde
     ctx.strokeStyle = "#C6FF3D";
     ctx.lineWidth = 2;
     ctx.strokeRect(0, cy, W, cropH);
-    // guides
+    // guías de tercios
     ctx.strokeStyle = "rgba(198,255,61,0.3)";
     ctx.lineWidth = 1;
     for (let i = 1; i < 3; i++) {
@@ -341,6 +349,18 @@ function ImageCropper({ src, onCrop, onCancelar }) {
 
   const redraw = (off, sc) => { if (imgRef.current) draw(imgRef.current, off, sc); };
 
+  // Zoom centrado en un punto (px, py) del canvas
+  const applyZoom = (newSc, pivotX, pivotY, curOff, curSc) => {
+    const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newSc));
+    const ratio = clamped / curSc;
+    const newOff = {
+      x: pivotX - (pivotX - curOff.x) * ratio,
+      y: pivotY - (pivotY - curOff.y) * ratio,
+    };
+    return { sc: clamped, off: newOff };
+  };
+
+  // ── Mouse ──
   const onMouseDown = (e) => { setDrag(true); setStart({ x: e.clientX - offset.x, y: e.clientY - offset.y }); };
   const onMouseMove = (e) => {
     if (!drag) return;
@@ -348,18 +368,66 @@ function ImageCropper({ src, onCrop, onCancelar }) {
     setOffset(off); redraw(off, scale);
   };
   const onMouseUp = () => setDrag(false);
-  const onTouchStart = (e) => { const t = e.touches[0]; setDrag(true); setStart({ x: t.clientX - offset.x, y: t.clientY - offset.y }); };
-  const onTouchMove = (e) => {
-    if (!drag) return;
-    const t = e.touches[0];
-    const off = { x: t.clientX - start.x, y: t.clientY - start.y };
-    setOffset(off); redraw(off, scale);
-  };
 
+  // ── Rueda del ratón ──
   const onWheel = (e) => {
     e.preventDefault();
-    const sc = Math.max(0.3, Math.min(4, scale - e.deltaY * 0.001));
-    setScale(sc); redraw(offset, sc);
+    const rect = canvasRef.current.getBoundingClientRect();
+    const pivotX = (e.clientX - rect.left) * (canvasRef.current.width / rect.width);
+    const pivotY = (e.clientY - rect.top) * (canvasRef.current.height / rect.height);
+    const delta = e.deltaY < 0 ? 1.08 : 0.93;
+    const { sc, off } = applyZoom(scale * delta, pivotX, pivotY, offset, scale);
+    setScale(sc); setOffset(off); redraw(off, sc);
+  };
+
+  // ── Touch: arrastre + pellizco ──
+  const onTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      setDrag(true);
+      setStart({ x: t.clientX - offset.x, y: t.clientY - offset.y });
+      pinchRef.current = null;
+    } else if (e.touches.length === 2) {
+      setDrag(false);
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchRef.current = Math.hypot(dx, dy);
+    }
+  };
+  const onTouchMove = (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && drag) {
+      const t = e.touches[0];
+      const off = { x: t.clientX - start.x, y: t.clientY - start.y };
+      setOffset(off); redraw(off, scale);
+    } else if (e.touches.length === 2 && pinchRef.current !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const rect = canvasRef.current.getBoundingClientRect();
+      const midX = ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left) * (canvasRef.current.width / rect.width);
+      const midY = ((e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top) * (canvasRef.current.height / rect.height);
+      const { sc, off } = applyZoom(scale * (dist / pinchRef.current), midX, midY, offset, scale);
+      setScale(sc); setOffset(off); redraw(off, sc);
+      pinchRef.current = dist;
+    }
+  };
+  const onTouchEnd = () => { setDrag(false); pinchRef.current = null; };
+
+  // ── Slider de zoom ──
+  const onSlider = (val) => {
+    const canvas = canvasRef.current;
+    const pivotX = canvas.width / 2, pivotY = canvas.height / 2;
+    const { sc, off } = applyZoom(val, pivotX, pivotY, offset, scale);
+    setScale(sc); setOffset(off); redraw(off, sc);
+  };
+
+  // ── Botones +/− ──
+  const zoomBtn = (factor) => {
+    const canvas = canvasRef.current;
+    const pivotX = canvas.width / 2, pivotY = canvas.height / 2;
+    const { sc, off } = applyZoom(scale * factor, pivotX, pivotY, offset, scale);
+    setScale(sc); setOffset(off); redraw(off, sc);
   };
 
   const handleCrop = () => {
@@ -373,18 +441,33 @@ function ImageCropper({ src, onCrop, onCancelar }) {
     onCrop(out.toDataURL("image/jpeg", 0.85));
   };
 
+  const pct = Math.round(scale * 100);
+
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:500, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, padding:20 }}>
-      <div style={{ fontSize:13, color:"#9AA1AC", textAlign:"center" }}>
-        Arrastra para reposicionar · Rueda del ratón para zoom<br/>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:500, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, padding:20 }}>
+      <div style={{ fontSize:13, color:"#9AA1AC", textAlign:"center", lineHeight:1.6 }}>
+        Arrastra para reposicionar · Pellizca o usa el zoom para ajustar<br/>
         <span style={{ color:"#C6FF3D", fontWeight:700 }}>El área entre las líneas verdes es lo que se verá</span>
       </div>
+
       <canvas ref={canvasRef} width={520} height={400}
         style={{ borderRadius:12, cursor:drag?"grabbing":"grab", touchAction:"none", maxWidth:"100%", background:"#0D0F12" }}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onMouseUp}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
         onWheel={onWheel}
       />
+
+      {/* CONTROLES DE ZOOM */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"10px 16px", width:"100%", maxWidth:520 }}>
+        <button onClick={()=>zoomBtn(0.85)} style={{ width:34, height:34, borderRadius:8, background:"#232830", border:"none", color:"#F2F2EF", fontSize:20, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>−</button>
+        <input type="range" min={MIN_SCALE} max={MAX_SCALE} step={0.01} value={scale}
+          onChange={e => onSlider(Number(e.target.value))}
+          style={{ flex:1, accentColor:"#C6FF3D", cursor:"pointer", height:4 }}
+        />
+        <button onClick={()=>zoomBtn(1.15)} style={{ width:34, height:34, borderRadius:8, background:"#232830", border:"none", color:"#F2F2EF", fontSize:20, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>+</button>
+        <span style={{ fontSize:12, fontWeight:700, color:"#C6FF3D", minWidth:42, textAlign:"right" }}>{pct}%</span>
+      </div>
+
       <div style={{ display:"flex", gap:10 }}>
         <button onClick={onCancelar} style={{ background:"none", border:"1px solid #232830", color:"#F2F2EF", fontWeight:700, fontSize:13, padding:"11px 22px", borderRadius:10, cursor:"pointer" }}>Cancelar</button>
         <button onClick={handleCrop} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"11px 22px", borderRadius:10, cursor:"pointer" }}>✓ Usar esta imagen</button>
