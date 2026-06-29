@@ -1461,6 +1461,25 @@ function GanadorRow({ h, onEditar, onEliminar }) {
   );
 }
 
+function BoletoVendidoRow({ num, info, onEliminar }) {
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <div style={{ background:"#14171C" }}>
+      <div style={{ display:"grid", gridTemplateColumns:"60px 1fr auto auto", alignItems:"center", gap:12, padding:"10px 14px", fontSize:13 }}>
+        <span style={{ background:"#C6FF3D", color:"#0D0F12", fontFamily:"'Arial Black',sans-serif", fontSize:11, padding:"4px 8px", borderRadius:6, textAlign:"center" }}>{num}</span>
+        <span>{info.nombre}</span>
+        <span style={{ fontSize:12, color:"#9AA1AC" }}>{info.telefono}</span>
+        <button onClick={()=>setConfirm(true)} style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"1px solid rgba(255,84,112,0.3)", color:"#FF5470", fontSize:12, fontWeight:700, padding:"7px 12px", borderRadius:9, cursor:"pointer" }}><Trash2 size={14}/></button>
+      </div>
+      {confirm && (
+        <div style={{ padding:"0 14px 14px" }}>
+          <ConfirmInline mensaje={`¿Liberar el boleto #${num}? Quedará disponible de nuevo para venderse.`} onSi={onEliminar} onNo={()=>setConfirm(false)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
@@ -1509,6 +1528,13 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   const rechazar = async (p) => {
     await savePendientes(pendientes.filter(x=>x.id!==p.id));
     showToast("Compra rechazada","warn");
+  };
+
+  const liberarBoleto = async (num) => {
+    const next = {...boletos, [num]: null};
+    const ok = await saveBoletos(next);
+    if (ok===false) showToast("Error al borrar el boleto. Intenta de nuevo.","warn");
+    else showToast(`Boleto #${num} liberado ✓`,"ok");
   };
 
   if (!unlocked) return (
@@ -1686,15 +1712,16 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
 
       {/* ---- TAB: BOLETOS ---- */}
       {tabAdmin==="boletos" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:1, background:"#232830", borderRadius:10, overflow:"hidden" }}>
-          {vendidos.length===0 && <p style={{ color:"#9AA1AC", fontSize:13, padding:16 }}>Aún no hay boletos vendidos.</p>}
-          {vendidos.map(([num,info])=>(
-            <div key={num} style={{ display:"grid", gridTemplateColumns:"60px 1fr auto", alignItems:"center", gap:12, background:"#14171C", padding:"10px 14px", fontSize:13 }}>
-              <span style={{ background:"#C6FF3D", color:"#0D0F12", fontFamily:"'Arial Black',sans-serif", fontSize:11, padding:"4px 8px", borderRadius:6, textAlign:"center" }}>{num}</span>
-              <span>{info.nombre}</span>
-              <span style={{ fontSize:12, color:"#9AA1AC" }}>{info.telefono}</span>
-            </div>
-          ))}
+        <div>
+          {vendidos.length>0 && (
+            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:14 }}>{vendidos.length} boleto{vendidos.length!==1?"s":""} vendido{vendidos.length!==1?"s":""}. Toca la papelera para liberar un boleto (vuelve a quedar disponible para la venta).</p>
+          )}
+          <div style={{ display:"flex", flexDirection:"column", gap:1, background:"#232830", borderRadius:10, overflow:"hidden" }}>
+            {vendidos.length===0 && <p style={{ color:"#9AA1AC", fontSize:13, padding:16 }}>Aún no hay boletos vendidos.</p>}
+            {vendidos.map(([num,info])=>(
+              <BoletoVendidoRow key={num} num={num} info={info} onEliminar={()=>liberarBoleto(num)} />
+            ))}
+          </div>
         </div>
       )}
 
