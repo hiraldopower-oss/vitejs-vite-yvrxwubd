@@ -70,6 +70,8 @@ const ADMIN_PIN = "1818";
 
 const CATEGORIAS = ["motos", "autos", "efectivo", "tech", "otro"];
 
+const COLORES_RIFA = ["#C6FF3D", "#818cf8", "#FF6B35", "#ec4899", "#22d3ee", "#f59e0b", "#a78bfa", "#34d399"];
+
 const METODOS_PAGO_INICIALES = [
   { id: "mp-1", tipo: "banco", nombre: "Banco Popular", titular: "Hiraldo Power", cuenta: "809-555-0118", activo: true },
   { id: "mp-2", tipo: "efectivo", nombre: "Efectivo (en persona)", titular: "", cuenta: "", activo: true },
@@ -172,13 +174,19 @@ function RifaCard({ rifa, vendidosCount, onJugar }) {
 }
 
 /* ---- Verify ---- */
-function Verify({ boletos, pendientes }) {
+function Verify({ boletos, pendientes, rifas }) {
   const [tel, setTel] = useState("");
   const [resultado, setResultado] = useState(null);
   const [buscado, setBuscado] = useState(false);
+  const tituloRifa = (rifaId) => (rifas||[]).find(r=>r.id===rifaId)?.titulo || "Rifa";
   const buscar = () => {
     setBuscado(true);
-    const aprobados = Object.entries(boletos||{}).filter(([,info])=>info&&info.telefono===tel.trim()).map(([num])=>num);
+    const aprobados = [];
+    Object.entries(boletos||{}).forEach(([rifaId, pool]) => {
+      Object.entries(pool||{}).forEach(([num,info]) => {
+        if (info && info.telefono===tel.trim()) aprobados.push({ num, rifaId });
+      });
+    });
     const pend = (pendientes||[]).filter(p=>p.telefono===tel.trim()&&p.estado==="pendiente");
     setResultado({ aprobados, pendientes: pend });
   };
@@ -198,9 +206,18 @@ function Verify({ boletos, pendientes }) {
           {resultado.aprobados.length>0 && (
             <div style={{ display:"flex", gap:12, background:"#14171C", border:"1px solid rgba(198,255,61,0.3)", borderRadius:12, padding:16 }}>
               <ShieldCheck size={18} style={{ color:"#C6FF3D", flexShrink:0 }} />
-              <div><div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>Boletos aprobados</div>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                  {resultado.aprobados.map(n=><span key={n} style={{ background:"#C6FF3D", color:"#0D0F12", fontFamily:"'Arial Black',sans-serif", fontSize:11, padding:"4px 9px", borderRadius:6 }}>{n}</span>)}
+              <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>Boletos aprobados</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {Object.entries(
+                    resultado.aprobados.reduce((acc,{num,rifaId})=>{ (acc[rifaId]=acc[rifaId]||[]).push(num); return acc; },{})
+                  ).map(([rifaId,nums])=>(
+                    <div key={rifaId}>
+                      <div style={{ fontSize:11, color:"#9AA1AC", marginBottom:4 }}>{tituloRifa(rifaId)}</div>
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                        {nums.map(n=><span key={n} style={{ background:"#C6FF3D", color:"#0D0F12", fontFamily:"'Arial Black',sans-serif", fontSize:11, padding:"4px 9px", borderRadius:6 }}>{n}</span>)}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -209,7 +226,7 @@ function Verify({ boletos, pendientes }) {
             <div style={{ display:"flex", gap:12, background:"#14171C", border:"1px solid rgba(255,107,53,0.3)", borderRadius:12, padding:16 }}>
               <Clock size={18} style={{ color:"#FF6B35", flexShrink:0 }} />
               <div><div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>Pendientes de validación</div>
-                {resultado.pendientes.map(p=><div key={p.id} style={{ fontSize:12, color:"#9AA1AC" }}>{p.cantidad} boleto{p.cantidad>1?"s":""} · {fmtMoney(p.total)}</div>)}
+                {resultado.pendientes.map(p=><div key={p.id} style={{ fontSize:12, color:"#9AA1AC" }}>{p.cantidad} boleto{p.cantidad>1?"s":""} de {p.rifaTitulo||"rifa"} · {fmtMoney(p.total)}</div>)}
               </div>
             </div>
           )}
@@ -733,13 +750,22 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const load = async (key, def) => { return await dbGet(key, def); };
-      const generarBoletos = () => { const o={}; for(let i=0;i<1000;i++) o[String(i).padStart(3,"0")]=null; return o; };
+      const generarBoletosRifa = (total) => { const o={}; for(let i=0;i<total;i++) o[String(i).padStart(3,"0")]=null; return o; };
+      const r = await load("rifas", RIFAS_INICIALES);
       const bRaw = await load("tickets", null);
-      const b = (bRaw && Object.keys(bRaw).length>0) ? bRaw : generarBoletos();
+      let b = bRaw || {};
+      // Migración: si "tickets" viene en el formato viejo (plano, sin agrupar por rifa), lo movemos a la primera rifa existente
+      const esFormatoViejo = bRaw && Object.keys(bRaw).length>0 && Object.keys(bRaw).every(k=>/^\d{3}$/.test(k));
+      if (esFormatoViejo && r[0]) {
+        b = { [r[0].id]: bRaw };
+      }
+      // Asegura que cada rifa tenga su pool de boletos generado
+      r.forEach(rifa => {
+        if (!b[rifa.id]) b[rifa.id] = generarBoletosRifa(rifa.totalBoletos);
+      });
       const p = await load("pending", []);
       const g = await load("ganador", null);
       const h = await load("historial", []);
-      const r = await load("rifas", RIFAS_INICIALES);
       const mp = await load("metodosPago", METODOS_PAGO_INICIALES);
       const sc = await load("siteConfig", SITE_CONFIG_INICIAL);
       setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp); setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
@@ -750,8 +776,13 @@ export default function App() {
   const save = async (key, val, setter) => { setter(val); const ok = await dbSet(key, val); return ok; };
   const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),3200); };
 
-  const vendidosCount = Object.values(boletos).filter(Boolean).length;
-  const pctGlobal = Math.round((vendidosCount/1000)*100);
+  const vendidosPorRifa = (rifaId) => Object.values(boletos[rifaId]||{}).filter(Boolean).length;
+  const pctGlobal = (() => {
+    const activas = rifas.filter(r=>r.activa);
+    const totalBoletosActivas = activas.reduce((s,r)=>s+r.totalBoletos,0);
+    const totalVendidosActivas = activas.reduce((s,r)=>s+vendidosPorRifa(r.id),0);
+    return totalBoletosActivas>0 ? Math.round((totalVendidosActivas/totalBoletosActivas)*100) : 0;
+  })();
 
   const refreshFromFirebase = async () => {
     try {
@@ -870,7 +901,7 @@ export default function App() {
             )}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:24 }}>
               {rifas.filter(r=>r.activa).map(r=>(
-                <RifaCard key={r.id} rifa={r} vendidosCount={vendidosCount} onJugar={()=>irARifa(r)} />
+                <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>irARifa(r)} />
               ))}
             </div>
             {rifas.filter(r=>!r.activa).length>0 && (
@@ -878,7 +909,7 @@ export default function App() {
                 <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color:"#9AA1AC", letterSpacing:1, marginTop:48, marginBottom:16 }}>RIFAS FINALIZADAS</h2>
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:24, opacity:0.6 }}>
                   {rifas.filter(r=>!r.activa).map(r=>(
-                    <RifaCard key={r.id} rifa={r} vendidosCount={0} onJugar={()=>{}} />
+                    <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>{}} />
                   ))}
                 </div>
               </>
@@ -889,20 +920,19 @@ export default function App() {
 
       {/* DETALLE / COMPRA */}
       {view==="rifa" && rifaActiva && (
-        <RifaDetalle rifa={rifas.find(r=>r.id===rifaActiva.id)||rifaActiva} boletos={boletos}
-          setBoletos={b=>save("tickets",b,setBoletos)} pendientes={pendientes}
+        <RifaDetalle rifa={rifas.find(r=>r.id===rifaActiva.id)||rifaActiva} pendientes={pendientes}
           setPendientes={p=>save("pending",p,setPendientes)} showToast={showToast}
-          onVolver={()=>setView("catalogo")} vendidosCount={vendidosCount} metodosPago={metodosPago} />
+          onVolver={()=>setView("catalogo")} vendidosCount={vendidosPorRifa(rifaActiva.id)} metodosPago={metodosPago} />
       )}
 
-      {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} />}
+      {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} rifas={rifas} />}
       {view==="ganadores" && <Ganadores historial={historial} />}
       {view==="admin" && (
         <Admin boletos={boletos} saveBoletos={b=>save("tickets",b,setBoletos)}
           pendientes={pendientes} savePendientes={p=>save("pending",p,setPendientes)}
           showToast={showToast} ganador={ganador} saveGanador={g=>save("ganador",g,setGanador)}
           historial={historial} saveHistorial={h=>save("historial",h,setHistorial)}
-          vendidosCount={vendidosCount} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
+          vendidosPorRifa={vendidosPorRifa} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
           metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)}
           siteConfig={siteConfig} saveSiteConfig={sc=>save("siteConfig",sc,setSiteConfig)}
           onRefresh={refreshFromFirebase} />
@@ -917,7 +947,7 @@ export default function App() {
 }
 
 /* ---- Vista detalle / compra ---- */
-function RifaDetalle({ rifa, boletos, setBoletos, pendientes, setPendientes, showToast, onVolver, vendidosCount, metodosPago }) {
+function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, vendidosCount, metodosPago }) {
   const minBol = Math.max(1, rifa.minBoletos || 1);
   const disponibles = Math.max(0, rifa.totalBoletos - vendidosCount);
   const maxBol = Math.max(minBol, disponibles);
@@ -950,7 +980,7 @@ function RifaDetalle({ rifa, boletos, setBoletos, pendientes, setPendientes, sho
       {showCheckout && (
         <CheckoutModal selected={cantidad} total={total} metodosPago={metodosPago} onClose={()=>setShowCheckout(false)}
           onConfirm={async(datos)=>{
-            const nuevo={id:"P"+Date.now(),...datos,cantidad,total,fecha:new Date().toISOString(),estado:"pendiente"};
+            const nuevo={id:"P"+Date.now(),...datos,cantidad,total,rifaId:rifa.id,rifaTitulo:rifa.titulo,fecha:new Date().toISOString(),estado:"pendiente"};
             const ok = await setPendientes([...pendientes,nuevo]);
             if(ok===false){
               showToast("Error al guardar. Intenta de nuevo o contacta al organizador.","warn");
@@ -1483,7 +1513,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ganador, saveGanador, historial, saveHistorial, vendidosCount, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, onRefresh }) {
+function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, onRefresh }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [numSorteo, setNumSorteo] = useState("");
@@ -1496,6 +1526,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   const [refreshing, setRefreshing] = useState(false);
   const [formSitio, setFormSitio] = useState({ ...SITE_CONFIG_INICIAL, ...siteConfig });
   const [guardandoSitio, setGuardandoSitio] = useState(false);
+  const [rifaSorteo, setRifaSorteo] = useState(rifas[0]?.id || null);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1505,21 +1536,29 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   };
 
   useEffect(() => { setFormSitio({ ...SITE_CONFIG_INICIAL, ...siteConfig }); }, [siteConfig]);
+  useEffect(() => { if(!rifaSorteo && rifas[0]) setRifaSorteo(rifas[0].id); }, [rifas]);
 
-  const disponibles = Object.keys(boletos).filter(k=>!boletos[k]);
+  const tituloRifa = (rifaId) => rifas.find(r=>r.id===rifaId)?.titulo || "Rifa eliminada";
+
+  // Listas globales agrupadas por rifa: [{rifaId, num, info}]
+  const vendidosTodos = Object.entries(boletos||{}).flatMap(([rifaId, pool]) =>
+    Object.entries(pool||{}).filter(([,v])=>v).map(([num,info])=>({rifaId,num,info}))
+  );
   const pendientesActivos = pendientes.filter(p=>p.estado==="pendiente");
-  const vendidos = Object.entries(boletos).filter(([,v])=>v);
 
   const aprobar = async (p) => {
-    const pool=[...disponibles];
-    if(pool.length<p.cantidad){showToast("No hay suficientes boletos","warn");return;}
-    const next={...boletos}; const asignados=[];
+    const poolRifa = boletos[p.rifaId] || {};
+    const disponiblesRifa = Object.keys(poolRifa).filter(k=>!poolRifa[k]);
+    if(disponiblesRifa.length<p.cantidad){showToast("No hay suficientes boletos disponibles en esta rifa","warn");return;}
+    const pool=[...disponiblesRifa]; const asignados=[];
+    const nextPool={...poolRifa};
     for(let i=0;i<p.cantidad&&pool.length;i++){
       const idx=Math.floor(Math.random()*pool.length);
       const num=pool.splice(idx,1)[0];
-      next[num]={nombre:p.nombre,telefono:p.telefono,fecha:p.fecha};
+      nextPool[num]={nombre:p.nombre,telefono:p.telefono,fecha:p.fecha};
       asignados.push(num);
     }
+    const next={...boletos, [p.rifaId]: nextPool};
     await saveBoletos(next);
     await savePendientes(pendientes.map(x=>x.id===p.id?{...x,estado:"aprobado",asignados}:x));
     showToast(`${asignados.length} boletos asignados a ${p.nombre}: ${asignados.join(", ")}`, "ok");
@@ -1530,8 +1569,9 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
     showToast("Compra rechazada","warn");
   };
 
-  const liberarBoleto = async (num) => {
-    const next = {...boletos, [num]: null};
+  const liberarBoleto = async (rifaId, num) => {
+    const poolRifa = boletos[rifaId] || {};
+    const next = {...boletos, [rifaId]: {...poolRifa, [num]: null}};
     const ok = await saveBoletos(next);
     if (ok===false) showToast("Error al borrar el boleto. Intenta de nuevo.","warn");
     else showToast(`Boleto #${num} liberado ✓`,"ok");
@@ -1554,15 +1594,15 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   );
 
   const candidato = (() => {
-    if(!numSorteo.trim()) return null;
+    if(!numSorteo.trim()||!rifaSorteo) return null;
     const key=numSorteo.trim().padStart(3,"0");
-    const info=boletos[key];
+    const info=(boletos[rifaSorteo]||{})[key];
     return info?{numero:key,...info}:{numero:key,noEncontrado:true};
   })();
 
   const confirmarGanador = async () => {
     if(!candidato||candidato.noEncontrado) return;
-    const reg={numero:candidato.numero,nombre:candidato.nombre,telefono:candidato.telefono,premio:premioDsc.trim()||"Premio Hiraldo Power",fecha:new Date().toISOString()};
+    const reg={numero:candidato.numero,nombre:candidato.nombre,telefono:candidato.telefono,rifaId:rifaSorteo,rifaTitulo:tituloRifa(rifaSorteo),premio:premioDsc.trim()||"Premio Hiraldo Power",fecha:new Date().toISOString()};
     await saveGanador(reg);
     await saveHistorial([{id:"H"+Date.now(),...reg},...historial]);
     showToast(`¡${candidato.nombre} es el ganador con el boleto #${candidato.numero}!`,"ok");
@@ -1571,8 +1611,9 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
 
   /* ---- GUARDAR RIFA ---- */
   const guardarRifa = async (form) => {
+    const esNueva = !rifas.find(r=>r.id===form.id);
     let nuevas;
-    if (rifas.find(r=>r.id===form.id)) {
+    if (!esNueva) {
       nuevas = rifas.map(r=>r.id===form.id?form:r);
       showToast("Rifa actualizada ✓","ok");
     } else {
@@ -1584,7 +1625,30 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       showToast("Error al guardar en Firebase. La imagen puede ser demasiado grande.", "warn");
       return;
     }
+    if (esNueva && !boletos[form.id]) {
+      const poolNuevo = {}; for(let i=0;i<form.totalBoletos;i++) poolNuevo[String(i).padStart(3,"0")]=null;
+      await saveBoletos({...boletos, [form.id]: poolNuevo});
+    } else if (!esNueva) {
+      // Si se aumentó el total de boletos, se agregan los números nuevos faltantes (sin tocar los ya vendidos)
+      const poolActual = boletos[form.id] || {};
+      const poolActualizado = {...poolActual};
+      for (let i=0; i<form.totalBoletos; i++) {
+        const key = String(i).padStart(3,"0");
+        if (!(key in poolActualizado)) poolActualizado[key] = null;
+      }
+      if (Object.keys(poolActualizado).length !== Object.keys(poolActual).length) {
+        await saveBoletos({...boletos, [form.id]: poolActualizado});
+      }
+    }
     setEditando(null);
+  };
+
+  const eliminarRifa = async (rifaId) => {
+    await saveRifas(rifas.filter(x=>x.id!==rifaId));
+    const nextBoletos = {...boletos}; delete nextBoletos[rifaId];
+    await saveBoletos(nextBoletos);
+    await savePendientes(pendientes.filter(p=>p.rifaId!==rifaId));
+    showToast("Rifa y sus boletos eliminados","warn");
   };
 
   const TAB = ({id,label}) => (
@@ -1605,7 +1669,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
 
       {/* STATS */}
       <div style={{ display:"flex", gap:24, marginBottom:28, flexWrap:"wrap" }}>
-        {[["vendidos",vendidos.length,"#C6FF3D"],["pendientes",pendientesActivos.length,"#FF6B35"],["disponibles",disponibles.length,"#F2F2EF"],["rifas activas",rifas.filter(r=>r.activa).length,"#818cf8"]].map(([lbl,val,color])=>(
+        {[["vendidos",vendidosTodos.length,"#C6FF3D"],["pendientes",pendientesActivos.length,"#FF6B35"],["disponibles", Object.values(boletos||{}).reduce((s,pool)=>s+Object.values(pool||{}).filter(v=>!v).length,0),"#F2F2EF"],["rifas activas",rifas.filter(r=>r.activa).length,"#818cf8"]].map(([lbl,val,color])=>(
           <div key={lbl}>
             <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:28, color }}>{val}</div>
             <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", letterSpacing:"0.5px", marginTop:2 }}>{lbl}</div>
@@ -1618,7 +1682,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
         <TAB id="compras" label={`COMPRAS PENDIENTES (${pendientesActivos.length})`} />
         <TAB id="rifas" label="GESTIONAR RIFAS" />
         <TAB id="pagos" label="MÉTODOS DE PAGO" />
-        <TAB id="boletos" label={`BOLETOS VENDIDOS (${vendidos.length})`} />
+        <TAB id="boletos" label={`BOLETOS VENDIDOS (${vendidosTodos.length})`} />
         <TAB id="ganadores" label={`GANADORES (${historial.length})`} />
         <TAB id="sorteo" label="SORTEO EN VIVO" />
         <TAB id="pagina" label="EDITAR PÁGINA" />
@@ -1629,10 +1693,17 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
         <div>
           {pendientesActivos.length===0 && <p style={{ color:"#9AA1AC", fontSize:13 }}>No hay compras pendientes.</p>}
           <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-            {pendientesActivos.map(p=>(
-              <div key={p.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:16 }}>
+            {pendientesActivos.map(p=>{
+              const idx = rifas.findIndex(r=>r.id===p.rifaId);
+              const color = COLORES_RIFA[idx>=0?idx%COLORES_RIFA.length:0];
+              return (
+              <div key={p.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:16, borderLeft:`3px solid ${color}` }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10, flexWrap:"wrap", gap:8 }}>
-                  <div><strong>{p.nombre}</strong><div style={{ fontSize:12, color:"#9AA1AC", marginTop:2 }}>{p.telefono} · {p.metodo} · {fmtMoney(p.total)}</div></div>
+                  <div>
+                    <strong>{p.nombre}</strong>
+                    <div style={{ fontSize:12, color:"#9AA1AC", marginTop:2 }}>{p.telefono} · {p.metodo} · {fmtMoney(p.total)}</div>
+                    <div style={{ fontSize:11, fontWeight:700, color, marginTop:4 }}>{p.rifaTitulo || tituloRifa(p.rifaId)}</div>
+                  </div>
                   <div style={{ fontSize:11, color:"#9AA1AC" }}>{new Date(p.fecha).toLocaleString("es-DO")}</div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, background:"#0D0F12", border:"1px solid #232830", borderRadius:8, padding:"8px 12px", marginBottom:10 }}>
@@ -1654,7 +1725,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
                   <button onClick={()=>aprobar(p)} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"10px 16px", borderRadius:10, cursor:"pointer" }}>✓ Aprobar y asignar</button>
                 </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
       )}
@@ -1671,7 +1742,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
             {rifas.map(r=>(
               <RifaRow key={r.id} r={r}
                 onEditar={()=>setEditando(r)}
-                onEliminar={async()=>{ await saveRifas(rifas.filter(x=>x.id!==r.id)); showToast("Rifa eliminada","warn"); }}
+                onEliminar={()=>eliminarRifa(r.id)}
               />
             ))}
           </div>
@@ -1713,14 +1784,31 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       {/* ---- TAB: BOLETOS ---- */}
       {tabAdmin==="boletos" && (
         <div>
-          {vendidos.length>0 && (
-            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:14 }}>{vendidos.length} boleto{vendidos.length!==1?"s":""} vendido{vendidos.length!==1?"s":""}. Toca la papelera para liberar un boleto (vuelve a quedar disponible para la venta).</p>
+          {vendidosTodos.length>0 && (
+            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:18 }}>{vendidosTodos.length} boleto{vendidosTodos.length!==1?"s":""} vendido{vendidosTodos.length!==1?"s":""} en total. Toca la papelera para liberar un boleto (vuelve a quedar disponible para la venta).</p>
           )}
-          <div style={{ display:"flex", flexDirection:"column", gap:1, background:"#232830", borderRadius:10, overflow:"hidden" }}>
-            {vendidos.length===0 && <p style={{ color:"#9AA1AC", fontSize:13, padding:16 }}>Aún no hay boletos vendidos.</p>}
-            {vendidos.map(([num,info])=>(
-              <BoletoVendidoRow key={num} num={num} info={info} onEliminar={()=>liberarBoleto(num)} />
-            ))}
+          {vendidosTodos.length===0 && <p style={{ color:"#9AA1AC", fontSize:13, padding:16 }}>Aún no hay boletos vendidos.</p>}
+          <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
+            {Object.entries(
+              vendidosTodos.reduce((acc,{rifaId,num,info})=>{ (acc[rifaId]=acc[rifaId]||[]).push([num,info]); return acc; },{})
+            ).map(([rifaId,items])=>{
+              const idx = rifas.findIndex(r=>r.id===rifaId);
+              const color = COLORES_RIFA[idx>=0?idx%COLORES_RIFA.length:0];
+              return (
+                <div key={rifaId}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                    <span style={{ width:10, height:10, borderRadius:999, background:color, flexShrink:0 }} />
+                    <span style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color }}>{tituloRifa(rifaId)}</span>
+                    <span style={{ fontSize:11, color:"#9AA1AC" }}>· {items.length} boleto{items.length!==1?"s":""}</span>
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:1, background:"#232830", borderRadius:10, overflow:"hidden", borderLeft:`3px solid ${color}` }}>
+                    {items.map(([num,info])=>(
+                      <BoletoVendidoRow key={num} num={num} info={info} onEliminar={()=>liberarBoleto(rifaId,num)} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1774,6 +1862,14 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
           <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:16, display:"flex", alignItems:"center", gap:8 }}>
             <Award size={17} style={{ color:"#C6FF3D" }}/> Sorteo en vivo
           </h3>
+          <label style={{ display:"block", marginBottom:18 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Rifa a sortear</span>
+            <select value={rifaSorteo||""} onChange={e=>{setRifaSorteo(e.target.value);setNumSorteo("");setConfirmando(false);}}
+              style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }}>
+              {rifas.length===0 && <option value="">No hay rifas creadas</option>}
+              {rifas.map(r=><option key={r.id} value={r.id}>{r.titulo}</option>)}
+            </select>
+          </label>
           {ganador ? (
             <div style={{ display:"flex", alignItems:"center", gap:16, background:"rgba(198,255,61,0.07)", border:"1px solid rgba(198,255,61,0.3)", borderRadius:12, padding:18 }}>
               <Trophy size={28} style={{ color:"#C6FF3D" }}/>
@@ -1781,19 +1877,20 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
                 <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:22, color:"#C6FF3D" }}>Boleto #{ganador.numero}</div>
                 <div style={{ fontWeight:700, fontSize:15, marginTop:2 }}>{ganador.nombre}</div>
                 <div style={{ fontSize:12, color:"#9AA1AC", marginTop:2 }}>{ganador.telefono} · {new Date(ganador.fecha).toLocaleString("es-DO")}</div>
+                {ganador.rifaTitulo && <div style={{ fontSize:12, color:"#C6FF3D", marginTop:2 }}>{ganador.rifaTitulo}</div>}
               </div>
               <button onClick={()=>saveGanador(null)} style={{ background:"none", border:"1px solid rgba(255,84,112,0.3)", color:"#FF5470", fontWeight:700, fontSize:13, padding:"10px 16px", borderRadius:10, cursor:"pointer" }}>Reiniciar</button>
             </div>
           ) : (
             <>
-              <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:16 }}>Cuando saques la bolita ganadora, escribe el número para identificar al ganador. Hay {vendidos.length} boletos vendidos.</p>
+              <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:16 }}>Cuando saques la bolita ganadora, escribe el número para identificar al ganador. Hay {rifaSorteo ? vendidosPorRifa(rifaSorteo) : 0} boletos vendidos en esta rifa.</p>
               <label style={{ display:"block", marginBottom:14 }}>
                 <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Premio de esta rifa</span>
                 <input value={premioDsc} onChange={e=>setPremioDsc(e.target.value)} placeholder="Ej: Scooter eléctrica"
                   style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
               </label>
               <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-                <input placeholder="Número de la tómbola, ej: 047" value={numSorteo}
+                <input placeholder="Número de la tómbola, ej: 047" value={numSorteo} disabled={!rifaSorteo}
                   onChange={e=>{setNumSorteo(e.target.value);setConfirmando(false);}}
                   onKeyDown={e=>e.key==="Enter"&&candidato&&!candidato.noEncontrado&&setConfirmando(true)}
                   style={{ flex:1, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"12px 14px", borderRadius:10, fontSize:14, outline:"none" }} />
@@ -1804,7 +1901,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
               </div>
               {candidato?.noEncontrado && (
                 <div style={{ display:"flex", gap:12, background:"#0D0F12", border:"1px solid #232830", borderRadius:10, padding:14, fontSize:13, color:"#9AA1AC" }}>
-                  <AlertCircle size={18} style={{ flexShrink:0 }}/> El boleto #{candidato.numero} no fue vendido.
+                  <AlertCircle size={18} style={{ flexShrink:0 }}/> El boleto #{candidato.numero} no fue vendido en esta rifa.
                 </div>
               )}
               {candidato&&!candidato.noEncontrado&&confirmando && (
@@ -1819,7 +1916,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
             </>
           )}
           <div style={{ display:"flex", alignItems:"center", gap:10, background:"rgba(255,107,53,0.08)", border:"1px solid rgba(255,107,53,0.25)", color:"#FF6B35", padding:"14px 16px", borderRadius:10, fontSize:13, marginTop:24 }}>
-            <Trophy size={16}/> Solo entran a la tómbola los {vendidos.length} boletos vendidos y aprobados.
+            <Trophy size={16}/> Solo entran a la tómbola los boletos vendidos y aprobados de la rifa seleccionada.
           </div>
         </div>
       )}
