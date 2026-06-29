@@ -56,6 +56,16 @@ const RIFAS_INICIALES = [
   },
 ];
 
+const SITE_CONFIG_INICIAL = {
+  marca: "HIRALDO POWER",
+  badgeHero: "HIRALDO POWER · RIFAS EN VIVO",
+  tituloHero1: "CATÁLOGO",
+  tituloHero2: "DE RIFAS",
+  subtituloHero: "Selecciona tu artículo soñado y asegura tu oportunidad.",
+  footerTexto: "Rifas en vivo y verificables",
+  colorAcento: "#C6FF3D",
+};
+
 const ADMIN_PIN = "1818";
 
 const CATEGORIAS = ["motos", "autos", "efectivo", "tech", "otro"];
@@ -717,6 +727,7 @@ export default function App() {
   const [historial, setHistorial] = useState([]);
   const [rifas, setRifas] = useState(RIFAS_INICIALES);
   const [metodosPago, setMetodosPago] = useState(METODOS_PAGO_INICIALES);
+  const [siteConfig, setSiteConfig] = useState(SITE_CONFIG_INICIAL);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -730,7 +741,8 @@ export default function App() {
       const h = await load("historial", []);
       const r = await load("rifas", RIFAS_INICIALES);
       const mp = await load("metodosPago", METODOS_PAGO_INICIALES);
-      setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp);
+      const sc = await load("siteConfig", SITE_CONFIG_INICIAL);
+      setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp); setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
       setReady(true);
     })();
   }, []);
@@ -747,10 +759,12 @@ export default function App() {
       const b = await dbGet("tickets", {});
       const h = await dbGet("historial", []);
       const r = await dbGet("rifas", RIFAS_INICIALES);
+      const sc = await dbGet("siteConfig", SITE_CONFIG_INICIAL);
       setPendientes(p);
       setBoletos(b);
       setHistorial(h);
       setRifas(r);
+      setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
     } catch {}
   };
 
@@ -813,7 +827,7 @@ export default function App() {
       <header style={{ position:"sticky", top:0, zIndex:40, background:"rgba(13,15,18,0.92)", backdropFilter:"blur(8px)", borderBottom:"1px solid #232830" }}>
         <div style={{ maxWidth:1400, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 40px", flexWrap:"wrap", gap:8 }}>
           <button onClick={()=>setView("catalogo")} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:14, letterSpacing:"0.5px", cursor:"pointer" }}>
-            <Zap size={22} style={{ color:"#C6FF3D" }}/> HIRALDO <strong style={{ marginLeft:2 }}>POWER</strong>
+            <Zap size={22} style={{ color: siteConfig.colorAcento }}/> {siteConfig.marca}
           </button>
           <nav style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
             <button className={`nb${view==="catalogo"||view==="rifa"?" on":""}`} onClick={()=>setView("catalogo")}>Rifas</button>
@@ -822,7 +836,7 @@ export default function App() {
           </nav>
         </div>
         <div style={{ height:3, background:"#232830" }}>
-          <div style={{ height:"100%", width:`${pctGlobal}%`, background:"#C6FF3D", transition:"width .4s" }} />
+          <div style={{ height:"100%", width:`${pctGlobal}%`, background: siteConfig.colorAcento, transition:"width .4s" }} />
         </div>
       </header>
 
@@ -842,12 +856,12 @@ export default function App() {
             <div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(#232830 1px,transparent 1px),linear-gradient(90deg,#232830 1px,transparent 1px)", backgroundSize:"32px 32px", opacity:0.25 }} />
             <div style={{ position:"relative", maxWidth:900, margin:"0 auto", textAlign:"center" }}>
               <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, letterSpacing:1, color:"#FF6B35", background:"rgba(255,107,53,0.1)", border:"1px solid rgba(255,107,53,0.3)", padding:"6px 12px", borderRadius:999, marginBottom:24 }}>
-                <Zap size={12}/> HIRALDO POWER · RIFAS EN VIVO
+                <Zap size={12}/> {siteConfig.badgeHero}
               </div>
               <h1 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(36px,5vw,68px)", lineHeight:1.08, marginBottom:16 }}>
-                CATÁLOGO <span style={{ background:"linear-gradient(90deg,#818cf8,#ec4899)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>DE RIFAS</span>
+                {siteConfig.tituloHero1} <span style={{ background:"linear-gradient(90deg,#818cf8,#ec4899)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>{siteConfig.tituloHero2}</span>
               </h1>
-              <p style={{ color:"#9AA1AC", fontSize:15, maxWidth:600, margin:"0 auto" }}>Selecciona tu artículo soñado y asegura tu oportunidad.</p>
+              <p style={{ color:"#9AA1AC", fontSize:15, maxWidth:600, margin:"0 auto" }}>{siteConfig.subtituloHero}</p>
             </div>
           </section>
           <section style={{ maxWidth:1400, margin:"0 auto", padding:"48px 40px" }}>
@@ -890,12 +904,13 @@ export default function App() {
           historial={historial} saveHistorial={h=>save("historial",h,setHistorial)}
           vendidosCount={vendidosCount} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
           metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)}
+          siteConfig={siteConfig} saveSiteConfig={sc=>save("siteConfig",sc,setSiteConfig)}
           onRefresh={refreshFromFirebase} />
       )}
 
       <footer style={{ textAlign:"center", padding:"40px 20px 50px", color:"#9AA1AC", fontSize:12, borderTop:"1px solid #232830" }}>
-        <div><Zap size={14} style={{ color:"#C6FF3D", verticalAlign:-2 }}/> <strong style={{ color:"#F2F2EF" }}>HIRALDO POWER</strong></div>
-        <p style={{ marginTop:6 }}>Rifas en vivo y verificables</p>
+        <div><Zap size={14} style={{ color: siteConfig.colorAcento, verticalAlign:-2 }}/> <strong style={{ color:"#F2F2EF" }}>{siteConfig.marca}</strong></div>
+        <p style={{ marginTop:6 }}>{siteConfig.footerTexto}</p>
       </footer>
     </div>
   );
@@ -903,7 +918,10 @@ export default function App() {
 
 /* ---- Vista detalle / compra ---- */
 function RifaDetalle({ rifa, boletos, setBoletos, pendientes, setPendientes, showToast, onVolver, vendidosCount, metodosPago }) {
-  const [cantidad, setCantidad] = useState(1);
+  const minBol = Math.max(1, rifa.minBoletos || 1);
+  const disponibles = Math.max(0, rifa.totalBoletos - vendidosCount);
+  const maxBol = Math.max(minBol, disponibles);
+  const [cantidad, setCantidad] = useState(minBol);
   const [showCheckout, setShowCheckout] = useState(false);
   const total = cantidad * rifa.precio;
   return (
@@ -912,14 +930,17 @@ function RifaDetalle({ rifa, boletos, setBoletos, pendientes, setPendientes, sho
       <RifaCard rifa={rifa} vendidosCount={vendidosCount} onJugar={()=>setShowCheckout(true)} />
       <div style={{ marginTop:32 }}>
         <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, marginBottom:6 }}>ELIGE TU CANTIDAD</h2>
-        <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20 }}>Los números se asignan al azar al aprobar tu pago.</p>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:24, marginBottom:16 }}>
-          <button onClick={()=>setCantidad(c=>Math.max(1,c-1))} style={{ width:48, height:48, borderRadius:12, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", fontSize:22, fontWeight:700, cursor:"pointer" }}>−</button>
+        <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:6 }}>Los números se asignan al azar al aprobar tu pago.</p>
+        {minBol > 1 && (
+          <p style={{ color:"#f59e0b", fontSize:12, fontWeight:700, marginBottom:20 }}>Mínimo de compra: {minBol} boletos</p>
+        )}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:24, marginBottom:16, marginTop: minBol>1?0:20 }}>
+          <button onClick={()=>setCantidad(c=>Math.max(minBol,c-minBol))} disabled={cantidad<=minBol} style={{ width:48, height:48, borderRadius:12, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", fontSize:22, fontWeight:700, cursor:"pointer", opacity:cantidad<=minBol?0.4:1 }}>−</button>
           <div style={{ textAlign:"center" }}>
             <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:40, color:"#C6FF3D" }}>{cantidad}</div>
             <div style={{ fontSize:12, color:"#9AA1AC", textTransform:"uppercase" }}>boleto{cantidad>1?"s":""}</div>
           </div>
-          <button onClick={()=>setCantidad(c=>Math.min(rifa.totalBoletos-vendidosCount,c+1))} style={{ width:48, height:48, borderRadius:12, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", fontSize:22, fontWeight:700, cursor:"pointer" }}>+</button>
+          <button onClick={()=>setCantidad(c=>Math.min(maxBol,c+minBol))} disabled={cantidad>=maxBol} style={{ width:48, height:48, borderRadius:12, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", fontSize:22, fontWeight:700, cursor:"pointer", opacity:cantidad>=maxBol?0.4:1 }}>+</button>
         </div>
         <div style={{ textAlign:"center", fontSize:15, marginBottom:18 }}>Total: <strong style={{ fontFamily:"'Arial Black',sans-serif", color:"#C6FF3D" }}>{fmtMoney(total)}</strong></div>
         <button onClick={()=>setShowCheckout(true)} style={{ width:"100%", background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, cursor:"pointer", display:"flex", alignItems:"center", gap:6, justifyContent:"center" }}>
@@ -935,7 +956,7 @@ function RifaDetalle({ rifa, boletos, setBoletos, pendientes, setPendientes, sho
               showToast("Error al guardar. Intenta de nuevo o contacta al organizador.","warn");
               return;
             }
-            setShowCheckout(false); setCantidad(1);
+            setShowCheckout(false); setCantidad(minBol);
             showToast("¡Compra recibida! Validaremos tu pago en máximo 24 horas.","ok");
           }} />
       )}
@@ -1443,7 +1464,7 @@ function GanadorRow({ h, onEditar, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ganador, saveGanador, historial, saveHistorial, vendidosCount, rifas, saveRifas, metodosPago, saveMetodosPago, onRefresh }) {
+function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ganador, saveGanador, historial, saveHistorial, vendidosCount, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, onRefresh }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [numSorteo, setNumSorteo] = useState("");
@@ -1454,6 +1475,8 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   const [editandoGanador, setEditandoGanador] = useState(null);
   const [tabAdmin, setTabAdmin] = useState("compras");
   const [refreshing, setRefreshing] = useState(false);
+  const [formSitio, setFormSitio] = useState({ ...SITE_CONFIG_INICIAL, ...siteConfig });
+  const [guardandoSitio, setGuardandoSitio] = useState(false);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1461,6 +1484,8 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
     setRefreshing(false);
     showToast("Datos actualizados ✓", "ok");
   };
+
+  useEffect(() => { setFormSitio({ ...SITE_CONFIG_INICIAL, ...siteConfig }); }, [siteConfig]);
 
   const disponibles = Object.keys(boletos).filter(k=>!boletos[k]);
   const pendientesActivos = pendientes.filter(p=>p.estado==="pendiente");
@@ -1570,6 +1595,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
         <TAB id="boletos" label={`BOLETOS VENDIDOS (${vendidos.length})`} />
         <TAB id="ganadores" label={`GANADORES (${historial.length})`} />
         <TAB id="sorteo" label="SORTEO EN VIVO" />
+        <TAB id="pagina" label="EDITAR PÁGINA" />
       </div>
 
       {/* ---- TAB: COMPRAS ---- */}
@@ -1767,6 +1793,80 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
           )}
           <div style={{ display:"flex", alignItems:"center", gap:10, background:"rgba(255,107,53,0.08)", border:"1px solid rgba(255,107,53,0.25)", color:"#FF6B35", padding:"14px 16px", borderRadius:10, fontSize:13, marginTop:24 }}>
             <Trophy size={16}/> Solo entran a la tómbola los {vendidos.length} boletos vendidos y aprobados.
+          </div>
+        </div>
+      )}
+
+      {/* ---- TAB: PÁGINA ---- */}
+      {tabAdmin==="pagina" && (
+        <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:22, maxWidth:600 }}>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:6, display:"flex", alignItems:"center", gap:8 }}>
+            <Pencil size={16} style={{ color:"#C6FF3D" }}/> Editar página principal
+          </h3>
+          <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20 }}>Cambia los textos y el color que ven los clientes en el inicio. Se aplica en toda la página al guardar.</p>
+
+          <label style={{ display:"block", marginBottom:14 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Nombre de la marca (header y footer)</span>
+            <input value={formSitio.marca} onChange={e=>setFormSitio(f=>({...f,marca:e.target.value}))} placeholder="Ej: HIRALDO POWER"
+              style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+          </label>
+
+          <label style={{ display:"block", marginBottom:14 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Etiqueta pequeña arriba del título (hero)</span>
+            <input value={formSitio.badgeHero} onChange={e=>setFormSitio(f=>({...f,badgeHero:e.target.value}))} placeholder="Ej: HIRALDO POWER · RIFAS EN VIVO"
+              style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+          </label>
+
+          <div style={{ display:"flex", gap:12, marginBottom:14 }}>
+            <label style={{ display:"block", flex:1 }}>
+              <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Título — parte 1 (blanco)</span>
+              <input value={formSitio.tituloHero1} onChange={e=>setFormSitio(f=>({...f,tituloHero1:e.target.value}))} placeholder="Ej: CATÁLOGO"
+                style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+            </label>
+            <label style={{ display:"block", flex:1 }}>
+              <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Título — parte 2 (degradado)</span>
+              <input value={formSitio.tituloHero2} onChange={e=>setFormSitio(f=>({...f,tituloHero2:e.target.value}))} placeholder="Ej: DE RIFAS"
+                style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+            </label>
+          </div>
+
+          <label style={{ display:"block", marginBottom:14 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Subtítulo (debajo del título grande)</span>
+            <input value={formSitio.subtituloHero} onChange={e=>setFormSitio(f=>({...f,subtituloHero:e.target.value}))} placeholder="Ej: Selecciona tu artículo soñado y asegura tu oportunidad."
+              style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+          </label>
+
+          <label style={{ display:"block", marginBottom:14 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Texto del pie de página (footer)</span>
+            <input value={formSitio.footerTexto} onChange={e=>setFormSitio(f=>({...f,footerTexto:e.target.value}))} placeholder="Ej: Rifas en vivo y verificables"
+              style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+          </label>
+
+          <label style={{ display:"block", marginBottom:20 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Color de acento (rayo, barra de progreso, botones)</span>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <input type="color" value={formSitio.colorAcento} onChange={e=>setFormSitio(f=>({...f,colorAcento:e.target.value}))}
+                style={{ width:48, height:38, padding:0, border:"1px solid #232830", borderRadius:8, background:"#0D0F12", cursor:"pointer" }} />
+              <input value={formSitio.colorAcento} onChange={e=>setFormSitio(f=>({...f,colorAcento:e.target.value}))} placeholder="#C6FF3D"
+                style={{ flex:1, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+            </div>
+          </label>
+
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={async()=>{
+                setGuardandoSitio(true);
+                const ok = await saveSiteConfig(formSitio);
+                setGuardandoSitio(false);
+                if (ok===false) showToast("Error al guardar los cambios. Intenta de nuevo.","warn");
+                else showToast("Página actualizada ✓","ok");
+              }} disabled={guardandoSitio}
+              style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"12px 20px", borderRadius:10, cursor:guardandoSitio?"not-allowed":"pointer", opacity:guardandoSitio?0.6:1, display:"flex", alignItems:"center", gap:6 }}>
+              <Check size={15}/> {guardandoSitio?"Guardando…":"Guardar cambios"}
+            </button>
+            <button onClick={()=>{setFormSitio({...SITE_CONFIG_INICIAL}); showToast("Valores por defecto cargados (sin guardar todavía)","ok");}}
+              style={{ background:"none", border:"1px solid #232830", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer" }}>
+              Restaurar valores originales
+            </button>
           </div>
         </div>
       )}
