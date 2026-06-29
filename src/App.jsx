@@ -17,7 +17,8 @@ const db = getFirestore(firebaseApp);
 
 const dbGet = async (key, def) => {
   try {
-    const snap = await getDoc(doc(db, "hiraldopower", key));
+    const timeout = new Promise((_, reject) => setTimeout(() => reject("timeout"), 5000));
+    const snap = await Promise.race([getDoc(doc(db, "hiraldopower", key)), timeout]);
     return snap.exists() ? snap.data().value : def;
   } catch { return def; }
 };
