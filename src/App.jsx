@@ -123,10 +123,10 @@ function RifaCard({ rifa, vendidosCount, onJugar }) {
   const agotada = !rifa.activa || vendidosCount >= rifa.totalBoletos;
   return (
     <div style={{ background: "#14171C", border: `1px solid ${rifa.destacada ? "rgba(198,255,61,0.3)" : "#232830"}`, borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column", width: "100%" }}>
-      <div style={{ height: 240, background: "#1a1d23", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+      <div style={{ paddingBottom: "62.5%", background: "#1a1d23", position: "relative", overflow: "hidden" }}>
         {rifa.imagen
-          ? <img src={rifa.imagen} alt={rifa.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <Trophy size={48} style={{ opacity: 0.15, color: "#9AA1AC" }} />
+          ? <img src={rifa.imagen} alt={rifa.titulo} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          : <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}><Trophy size={48} style={{ opacity: 0.15, color: "#9AA1AC" }} /></div>
         }
         {agotada && (
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
