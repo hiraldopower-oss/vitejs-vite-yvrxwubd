@@ -285,11 +285,27 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
   const fileRef = useRef();
   const fileMultiRef = useRef();
 
+  const comprimirImagen = (dataUrl, maxPx, quality, cb) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  };
+
   const onImagen = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => set("imagen", ev.target.result);
+    reader.onload = (ev) => comprimirImagen(ev.target.result, 1200, 0.75, (compressed) => set("imagen", compressed));
     reader.readAsDataURL(file);
   };
 
@@ -297,7 +313,9 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
     const files = Array.from(e.target.files || []);
     files.forEach(file => {
       const reader = new FileReader();
-      reader.onload = (ev) => setForm(f => ({ ...f, imagenes: [...(f.imagenes||[]), ev.target.result] }));
+      reader.onload = (ev) => comprimirImagen(ev.target.result, 800, 0.7, (compressed) => {
+        setForm(f => ({ ...f, imagenes: [...(f.imagenes||[]), compressed] }));
+      });
       reader.readAsDataURL(file);
     });
   };
@@ -1381,7 +1399,11 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       nuevas = [...rifas, form];
       showToast("Rifa creada ✓","ok");
     }
-    await saveRifas(nuevas);
+    const ok = await saveRifas(nuevas);
+    if (ok === false) {
+      showToast("Error al guardar en Firebase. La imagen puede ser demasiado grande.", "warn");
+      return;
+    }
     setEditando(null);
   };
 
