@@ -988,6 +988,27 @@ export default function App() {
             </div>
           </section>
 
+          <section className="catalog-section" style={{ maxWidth:1600, margin:"0 auto", padding:"52px 60px" }}>
+            {rifas.filter(r=>r.activa).length===0 && (
+              <p style={{ color:"#9AA1AC", fontSize:14, textAlign:"center" }}>No hay rifas activas en este momento.</p>
+            )}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))", gap:28 }}>
+              {rifas.filter(r=>r.activa).map(r=>(
+                <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>irARifa(r)} />
+              ))}
+            </div>
+            {rifas.filter(r=>!r.activa).length>0 && (
+              <>
+                <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color:"#9AA1AC", letterSpacing:1, marginTop:48, marginBottom:16 }}>RIFAS FINALIZADAS</h2>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))", gap:28, opacity:0.6 }}>
+                  {rifas.filter(r=>!r.activa).map(r=>(
+                    <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>{}} />
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+
           {/* ── CÓMO FUNCIONA ── */}
           <section style={{ borderBottom:"1px solid #232830", padding:"64px 60px", background:"#0D0F12" }}>
             <div style={{ maxWidth:1000, margin:"0 auto" }}>
@@ -1013,7 +1034,6 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {/* CTA de WhatsApp dentro de la sección */}
               <div style={{ marginTop:40, textAlign:"center" }}>
                 <a href="https://wa.me/18293108799?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20las%20rifas%20%F0%9F%8E%9F%EF%B8%8F" target="_blank" rel="noopener noreferrer"
                   style={{ display:"inline-flex", alignItems:"center", gap:10, background:"#25D366", color:"#fff", fontWeight:800, fontSize:14, padding:"14px 28px", borderRadius:12, textDecoration:"none", boxShadow:"0 4px 20px rgba(37,211,102,0.3)" }}>
@@ -1022,27 +1042,6 @@ export default function App() {
                 </a>
               </div>
             </div>
-          </section>
-
-          <section className="catalog-section" style={{ maxWidth:1600, margin:"0 auto", padding:"52px 60px" }}>
-            {rifas.filter(r=>r.activa).length===0 && (
-              <p style={{ color:"#9AA1AC", fontSize:14, textAlign:"center" }}>No hay rifas activas en este momento.</p>
-            )}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))", gap:28 }}>
-              {rifas.filter(r=>r.activa).map(r=>(
-                <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>irARifa(r)} />
-              ))}
-            </div>
-            {rifas.filter(r=>!r.activa).length>0 && (
-              <>
-                <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color:"#9AA1AC", letterSpacing:1, marginTop:48, marginBottom:16 }}>RIFAS FINALIZADAS</h2>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))", gap:28, opacity:0.6 }}>
-                  {rifas.filter(r=>!r.activa).map(r=>(
-                    <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>{}} />
-                  ))}
-                </div>
-              </>
-            )}
           </section>
         </div>
       )}
