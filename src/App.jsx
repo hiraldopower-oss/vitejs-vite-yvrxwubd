@@ -79,6 +79,15 @@ const METODOS_PAGO_INICIALES = [
 
 function fmtMoney(n) { return "RD$" + Number(n).toLocaleString("es-DO"); }
 
+// Devuelve true si la fecha/hora del sorteo ya pasó (tiempo agotado)
+function sorteoVencido(fechaStr, hora) {
+  if (!fechaStr) return false;
+  const [y, m, d] = fechaStr.split("-").map(Number);
+  const [hh, mm] = (hora || "23:59").split(":").map(Number);
+  const fechaLocal = new Date(y, m - 1, d, hh, mm, 0);
+  return fechaLocal.getTime() <= Date.now();
+}
+
 /* ---- Countdown ---- */
 function Countdown({ fechaStr, hora }) {
   const calc = () => {
@@ -132,7 +141,8 @@ function ProgressBar({ vendidos, total }) {
 
 /* ---- Rifa Card ---- */
 function RifaCard({ rifa, vendidosCount, onJugar }) {
-  const agotada = !rifa.activa || vendidosCount >= rifa.totalBoletos;
+  const vencida = sorteoVencido(rifa.fechaSorteo, rifa.horaSorteo || "23:59");
+  const agotada = !rifa.activa || vendidosCount >= rifa.totalBoletos || vencida;
   return (
     <div style={{ background: "#14171C", border: `1px solid ${rifa.destacada ? "rgba(198,255,61,0.3)" : "#232830"}`, borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column", width: "100%" }}>
       <div style={{ paddingBottom: "62.5%", background: "#1a1d23", position: "relative", overflow: "hidden" }}>
@@ -142,7 +152,7 @@ function RifaCard({ rifa, vendidosCount, onJugar }) {
         }
         {agotada && (
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <div style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 28, color: "#FF5470", border: "3px solid #FF5470", padding: "4px 14px", borderRadius: 6, transform: "rotate(-8deg)", letterSpacing: 2 }}>AGOTADO</div>
+            <div style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 28, color: "#FF5470", border: "3px solid #FF5470", padding: "4px 14px", borderRadius: 6, transform: "rotate(-8deg)", letterSpacing: 2 }}>{vencida && vendidosCount < rifa.totalBoletos ? "CERRADO" : "AGOTADO"}</div>
           </div>
         )}
         {rifa.etiqueta && !agotada && (
@@ -164,7 +174,7 @@ function RifaCard({ rifa, vendidosCount, onJugar }) {
             <div style={{ fontSize: 10, color: "#9AA1AC" }}>Mín. {rifa.minBoletos} boleto{rifa.minBoletos>1?"s":""}</div>
           </div>
           {agotada
-            ? <button disabled style={{ border: "1px solid #FF5470", background: "#1a1d23", color: "#FF5470", fontSize: 11, fontWeight: 800, padding: "8px 14px", borderRadius: 8, opacity: 0.7, cursor: "not-allowed" }}>AGOTADO</button>
+            ? <button disabled style={{ border: "1px solid #FF5470", background: "#1a1d23", color: "#FF5470", fontSize: 11, fontWeight: 800, padding: "8px 14px", borderRadius: 8, opacity: 0.7, cursor: "not-allowed" }}>{vencida && vendidosCount < rifa.totalBoletos ? "CERRADO" : "AGOTADO"}</button>
             : <button onClick={onJugar} style={{ display: "flex", alignItems: "center", gap: 4, border: "1px solid #C6FF3D", background: "none", color: "#C6FF3D", fontSize: 12, fontWeight: 800, padding: "10px 16px", borderRadius: 8, cursor: "pointer" }}>JUGAR <ChevronRight size={14} /></button>
           }
         </div>
@@ -1103,10 +1113,22 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
   const [cantidad, setCantidad] = useState(minBol);
   const [showCheckout, setShowCheckout] = useState(false);
   const total = cantidad * rifa.precio;
+  const vencida = sorteoVencido(rifa.fechaSorteo, rifa.horaSorteo || "23:59");
+  const cerrada = !rifa.activa || disponibles <= 0 || vencida;
   return (
     <main style={{ maxWidth:560, margin:"0 auto", padding:"40px 20px" }}>
       <button onClick={onVolver} style={{ background:"none", border:"none", color:"#9AA1AC", fontSize:13, cursor:"pointer", marginBottom:24, display:"flex", alignItems:"center", gap:6 }}>← Volver al catálogo</button>
-      <RifaCard rifa={rifa} vendidosCount={vendidosCount} onJugar={()=>setShowCheckout(true)} />
+      <RifaCard rifa={rifa} vendidosCount={vendidosCount} onJugar={()=>{ if(!cerrada) setShowCheckout(true); }} />
+      {cerrada ? (
+        <div style={{ marginTop:32, textAlign:"center", background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:"28px 20px" }}>
+          <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:16, color:"#FF5470", marginBottom:6 }}>
+            {vencida ? "El tiempo para comprar boletos terminó" : "Esta rifa ya no admite compras"}
+          </div>
+          <p style={{ color:"#9AA1AC", fontSize:13 }}>
+            {vencida ? "El sorteo ya cerró su periodo de venta." : "Todos los boletos fueron vendidos."}
+          </p>
+        </div>
+      ) : (
       <div style={{ marginTop:32 }}>
         <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, marginBottom:6 }}>ELIGE TU CANTIDAD</h2>
         <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:6 }}>Los números se asignan al azar al aprobar tu pago.</p>
@@ -1126,7 +1148,8 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
           Comprar {cantidad} boleto{cantidad>1?"s":""} <ChevronRight size={16}/>
         </button>
       </div>
-      {showCheckout && (
+      )}
+      {showCheckout && !cerrada && (
         <CheckoutModal selected={cantidad} total={total} metodosPago={metodosPago} onClose={()=>setShowCheckout(false)}
           onConfirm={async(datos)=>{
             const nuevo={id:"P"+Date.now(),...datos,cantidad,total,rifaId:rifa.id,rifaTitulo:rifa.titulo,fecha:new Date().toISOString(),estado:"pendiente"};
