@@ -262,6 +262,110 @@ function Ganadores({ historial }) {
   );
 }
 
+
+/* ============================================================
+   IMAGE CROPPER — recorta en proporción 16:10
+   ============================================================ */
+function ImageCropper({ src, onCrop, onCancelar }) {
+  const canvasRef = useRef(null);
+  const [drag, setDrag] = useState(false);
+  const [start, setStart] = useState({ x: 0, y: 0 });
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(1);
+  const imgRef = useRef(null);
+  const ASPECT = 10 / 16; // height / width
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      setOffset({ x: 0, y: 0 });
+      setScale(1);
+      draw(img, { x: 0, y: 0 }, 1);
+    };
+    img.src = src;
+  }, [src]);
+
+  const draw = (img, off, sc) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const W = canvas.width, H = canvas.height;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const iw = img.width * sc, ih = img.height * sc;
+    ctx.drawImage(img, off.x, off.y, iw, ih);
+    // overlay
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    const cropH = W * ASPECT;
+    const cy = (H - cropH) / 2;
+    ctx.fillRect(0, 0, W, cy);
+    ctx.fillRect(0, cy + cropH, W, H - cy - cropH);
+    ctx.strokeStyle = "#C6FF3D";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, cy, W, cropH);
+    // guides
+    ctx.strokeStyle = "rgba(198,255,61,0.3)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath(); ctx.moveTo(W * i / 3, cy); ctx.lineTo(W * i / 3, cy + cropH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, cy + cropH * i / 3); ctx.lineTo(W, cy + cropH * i / 3); ctx.stroke();
+    }
+  };
+
+  const redraw = (off, sc) => { if (imgRef.current) draw(imgRef.current, off, sc); };
+
+  const onMouseDown = (e) => { setDrag(true); setStart({ x: e.clientX - offset.x, y: e.clientY - offset.y }); };
+  const onMouseMove = (e) => {
+    if (!drag) return;
+    const off = { x: e.clientX - start.x, y: e.clientY - start.y };
+    setOffset(off); redraw(off, scale);
+  };
+  const onMouseUp = () => setDrag(false);
+  const onTouchStart = (e) => { const t = e.touches[0]; setDrag(true); setStart({ x: t.clientX - offset.x, y: t.clientY - offset.y }); };
+  const onTouchMove = (e) => {
+    if (!drag) return;
+    const t = e.touches[0];
+    const off = { x: t.clientX - start.x, y: t.clientY - start.y };
+    setOffset(off); redraw(off, scale);
+  };
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    const sc = Math.max(0.3, Math.min(4, scale - e.deltaY * 0.001));
+    setScale(sc); redraw(offset, sc);
+  };
+
+  const handleCrop = () => {
+    const canvas = canvasRef.current;
+    const W = canvas.width, H = canvas.height;
+    const cropH = W * ASPECT;
+    const cy = (H - cropH) / 2;
+    const out = document.createElement("canvas");
+    out.width = W; out.height = cropH;
+    out.getContext("2d").drawImage(canvas, 0, cy, W, cropH, 0, 0, W, cropH);
+    onCrop(out.toDataURL("image/jpeg", 0.85));
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:500, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, padding:20 }}>
+      <div style={{ fontSize:13, color:"#9AA1AC", textAlign:"center" }}>
+        Arrastra para reposicionar · Rueda del ratón para zoom<br/>
+        <span style={{ color:"#C6FF3D", fontWeight:700 }}>El área entre las líneas verdes es lo que se verá</span>
+      </div>
+      <canvas ref={canvasRef} width={520} height={400}
+        style={{ borderRadius:12, cursor:drag?"grabbing":"grab", touchAction:"none", maxWidth:"100%", background:"#0D0F12" }}
+        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onMouseUp}
+        onWheel={onWheel}
+      />
+      <div style={{ display:"flex", gap:10 }}>
+        <button onClick={onCancelar} style={{ background:"none", border:"1px solid #232830", color:"#F2F2EF", fontWeight:700, fontSize:13, padding:"11px 22px", borderRadius:10, cursor:"pointer" }}>Cancelar</button>
+        <button onClick={handleCrop} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"11px 22px", borderRadius:10, cursor:"pointer" }}>✓ Usar esta imagen</button>
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================
    EDITOR DE RIFA — modal para crear/editar (mejorado)
    ============================================================ */
@@ -291,6 +395,7 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
 
   const fileRef = useRef();
   const fileMultiRef = useRef();
+  const [cropSrc, setCropSrc] = useState(null);
 
   const comprimirImagen = (dataUrl, maxPx, quality, cb) => {
     const img = new Image();
@@ -312,8 +417,15 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => comprimirImagen(ev.target.result, 1200, 0.75, (compressed) => set("imagen", compressed));
+    reader.onload = (ev) => setCropSrc(ev.target.result);
     reader.readAsDataURL(file);
+  };
+
+  const onCropDone = (croppedDataUrl) => {
+    comprimirImagen(croppedDataUrl, 1200, 0.82, (compressed) => {
+      set("imagen", compressed);
+      setCropSrc(null);
+    });
   };
 
   const onImagenExtra = (e) => {
@@ -354,6 +466,8 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
   const valido = form.titulo && form.fechaSorteo;
 
   return (
+    <>
+    {cropSrc && <ImageCropper src={cropSrc} onCrop={onCropDone} onCancelar={()=>setCropSrc(null)} />}
     <div onClick={onCancelar} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:"16px" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:18, width:"100%", maxWidth:600, maxHeight:"92vh", overflowY:"auto", position:"relative", display:"flex", flexDirection:"column" }}>
 
@@ -586,6 +700,7 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
         </div>
       </div>
     </div>
+  </>
   );
 }
 
