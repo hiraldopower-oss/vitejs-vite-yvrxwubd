@@ -842,9 +842,9 @@ export default function App() {
         .nb.on{color:#0D0F12;background:#C6FF3D;}
         @media(max-width:768px){
           .nb{font-size:12px;padding:8px 10px;}
-          .catalog-section{padding:32px 16px !important;}
-          .hero-section{padding:48px 16px 40px !important;}
-          .header-inner{padding:12px 16px !important;}
+          .catalog-section{padding:32px 20px !important;}
+          .hero-section{padding:60px 20px 48px !important;}
+          .header-inner{padding:12px 20px !important;}
           .admin-layout{flex-direction:column !important;}
           .admin-sidebar{flex-direction:row !important;flex-wrap:wrap;border-right:none !important;border-bottom:1px solid #232830;padding:12px 16px !important;gap:6px !important;width:auto !important;min-width:unset !important;}
           .admin-sidebar button{padding:8px 12px !important;font-size:11px !important;}
@@ -861,7 +861,7 @@ export default function App() {
 
       {/* HEADER */}
       <header style={{ position:"sticky", top:0, zIndex:40, background:"rgba(13,15,18,0.92)", backdropFilter:"blur(8px)", borderBottom:"1px solid #232830" }}>
-        <div style={{ maxWidth:1400, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 40px", flexWrap:"wrap", gap:8 }}>
+        <div style={{ maxWidth:1600, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 60px", flexWrap:"wrap", gap:8 }}>
           <button onClick={()=>setView("catalogo")} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:14, letterSpacing:"0.5px", cursor:"pointer" }}>
             <Zap size={22} style={{ color: siteConfig.colorAcento }}/> {siteConfig.marca}
           </button>
@@ -888,23 +888,25 @@ export default function App() {
               </div>
             </div>
           )}
-          <section style={{ padding:"80px 40px 60px", borderBottom:"1px solid #232830", position:"relative", overflow:"hidden" }}>
-            <div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(#232830 1px,transparent 1px),linear-gradient(90deg,#232830 1px,transparent 1px)", backgroundSize:"32px 32px", opacity:0.25 }} />
-            <div style={{ position:"relative", maxWidth:900, margin:"0 auto", textAlign:"center" }}>
-              <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, letterSpacing:1, color:"#FF6B35", background:"rgba(255,107,53,0.1)", border:"1px solid rgba(255,107,53,0.3)", padding:"6px 12px", borderRadius:999, marginBottom:24 }}>
+          <section className="hero-section" style={{ padding:"100px 60px 80px", borderBottom:"1px solid #232830", position:"relative", overflow:"hidden", minHeight:320, display:"flex", alignItems:"center" }}>
+            <div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(#232830 1px,transparent 1px),linear-gradient(90deg,#232830 1px,transparent 1px)", backgroundSize:"40px 40px", opacity:0.2 }} />
+            {/* Glow de fondo */}
+            <div style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", width:600, height:300, background:"radial-gradient(ellipse,rgba(198,255,61,0.06) 0%,transparent 70%)", pointerEvents:"none" }} />
+            <div style={{ position:"relative", width:"100%", textAlign:"center" }}>
+              <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, fontWeight:800, letterSpacing:"1.5px", color:"#FF6B35", background:"rgba(255,107,53,0.1)", border:"1px solid rgba(255,107,53,0.3)", padding:"7px 16px", borderRadius:999, marginBottom:28 }}>
                 <Zap size={12}/> {siteConfig.badgeHero}
               </div>
-              <h1 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(36px,5vw,68px)", lineHeight:1.08, marginBottom:16 }}>
-                {siteConfig.tituloHero1} <span style={{ background:"linear-gradient(90deg,#818cf8,#ec4899)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>{siteConfig.tituloHero2}</span>
+              <h1 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(48px,6vw,88px)", lineHeight:1.05, marginBottom:20, letterSpacing:"-0.5px" }}>
+                {siteConfig.tituloHero1}<br/><span style={{ background:"linear-gradient(90deg,#818cf8,#ec4899)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>{siteConfig.tituloHero2}</span>
               </h1>
-              <p style={{ color:"#9AA1AC", fontSize:15, maxWidth:600, margin:"0 auto" }}>{siteConfig.subtituloHero}</p>
+              <p style={{ color:"#9AA1AC", fontSize:16, maxWidth:560, margin:"0 auto", lineHeight:1.6 }}>{siteConfig.subtituloHero}</p>
             </div>
           </section>
-          <section style={{ maxWidth:1400, margin:"0 auto", padding:"48px 40px" }}>
+          <section className="catalog-section" style={{ maxWidth:1600, margin:"0 auto", padding:"52px 60px" }}>
             {rifas.filter(r=>r.activa).length===0 && (
               <p style={{ color:"#9AA1AC", fontSize:14, textAlign:"center" }}>No hay rifas activas en este momento.</p>
             )}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:24 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))", gap:28 }}>
               {rifas.filter(r=>r.activa).map(r=>(
                 <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>irARifa(r)} />
               ))}
@@ -912,7 +914,7 @@ export default function App() {
             {rifas.filter(r=>!r.activa).length>0 && (
               <>
                 <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color:"#9AA1AC", letterSpacing:1, marginTop:48, marginBottom:16 }}>RIFAS FINALIZADAS</h2>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:24, opacity:0.6 }}>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))", gap:28, opacity:0.6 }}>
                   {rifas.filter(r=>!r.activa).map(r=>(
                     <RifaCard key={r.id} rifa={r} vendidosCount={vendidosPorRifa(r.id)} onJugar={()=>{}} />
                   ))}
