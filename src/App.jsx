@@ -740,8 +740,6 @@ export default function App() {
           vendidosCount={vendidosCount} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
           metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)}
           onRefresh={refreshFromFirebase} />
-          vendidosCount={vendidosCount} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
-          metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)} />
       )}
 
       <footer style={{ textAlign:"center", padding:"40px 20px 50px", color:"#9AA1AC", fontSize:12, borderTop:"1px solid #232830" }}>
