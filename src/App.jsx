@@ -845,6 +845,11 @@ export default function App() {
           .catalog-section{padding:32px 16px !important;}
           .hero-section{padding:48px 16px 40px !important;}
           .header-inner{padding:12px 16px !important;}
+          .admin-layout{flex-direction:column !important;}
+          .admin-sidebar{flex-direction:row !important;flex-wrap:wrap;border-right:none !important;border-bottom:1px solid #232830;padding:12px 16px !important;gap:6px !important;width:auto !important;min-width:unset !important;}
+          .admin-sidebar button{padding:8px 12px !important;font-size:11px !important;}
+          .admin-content{padding:20px 16px !important;}
+          .admin-main{padding:24px 16px !important;}
         }
       `}</style>
 
@@ -990,7 +995,9 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
             showToast("¡Compra recibida! Validaremos tu pago en máximo 24 horas.","ok");
           }} />
       )}
-    </main>
+        </main>
+      </div>
+    </div>
   );
 }
 
@@ -1669,43 +1676,73 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   );
 
   return (
-    <main style={{ maxWidth:1400, margin:"0 auto", padding:"40px 40px" }}>
+    <div style={{ maxWidth:1600, margin:"0 auto" }} className="admin-main">
       {editando && <EditorRifa rifa={editando==="nueva"?null:editando} onGuardar={guardarRifa} onCancelar={()=>setEditando(null)} />}
 
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
-        <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:22 }}>PANEL ADMIN</h2>
-        <button onClick={handleRefresh} disabled={refreshing}
-          style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #C6FF3D", color:"#C6FF3D", fontWeight:700, fontSize:12, padding:"9px 16px", borderRadius:9, cursor:refreshing?"not-allowed":"pointer", opacity:refreshing?0.6:1 }}>
-          {refreshing ? "Actualizando…" : "↻ Actualizar datos"}
-        </button>
-      </div>
-
-      {/* STATS */}
-      <div style={{ display:"flex", gap:24, marginBottom: totalHuerfanos>0?14:28, flexWrap:"wrap" }}>
-        {[["vendidos",vendidosTodos.length,"#C6FF3D"],["pendientes",pendientesActivos.length,"#FF6B35"],["disponibles", Object.values(boletos||{}).reduce((s,pool)=>s+Object.values(pool||{}).filter(v=>!v).length,0),"#F2F2EF"],["rifas activas",rifas.filter(r=>r.activa).length,"#818cf8"]].map(([lbl,val,color])=>(
-          <div key={lbl}>
-            <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:28, color }}>{val}</div>
-            <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", letterSpacing:"0.5px", marginTop:2 }}>{lbl}</div>
-          </div>
-        ))}
+      {/* TOPBAR */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"28px 40px 0", flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, letterSpacing:"0.5px" }}>PANEL ADMIN</h2>
+          <p style={{ color:"#9AA1AC", fontSize:12, marginTop:2 }}>Hiraldo Power</p>
+        </div>
+        <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+          {[["Vendidos",vendidosTodos.length,"#C6FF3D"],["Pendientes",pendientesActivos.length,"#FF6B35"],["Disponibles", Object.values(boletos||{}).reduce((s,pool)=>s+Object.values(pool||{}).filter(v=>!v).length,0),"#9AA1AC"],["Activas",rifas.filter(r=>r.activa).length,"#818cf8"]].map(([lbl,val,color])=>(
+            <div key={lbl} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:10, padding:"10px 18px", textAlign:"center", minWidth:80 }}>
+              <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:22, color, lineHeight:1 }}>{val}</div>
+              <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase", letterSpacing:"0.5px", marginTop:3 }}>{lbl}</div>
+            </div>
+          ))}
+          <button onClick={handleRefresh} disabled={refreshing}
+            style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #C6FF3D", color:"#C6FF3D", fontWeight:700, fontSize:12, padding:"12px 18px", borderRadius:9, cursor:refreshing?"not-allowed":"pointer", opacity:refreshing?0.6:1 }}>
+            {refreshing ? "Actualizando…" : "↻ Actualizar"}
+          </button>
+        </div>
       </div>
 
       {totalHuerfanos > 0 && tabAdmin!=="rifas" && (
-        <button onClick={()=>setTabAdmin("rifas")} style={{ display:"flex", alignItems:"center", gap:8, background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.3)", color:"#f59e0b", fontSize:12, fontWeight:700, padding:"10px 14px", borderRadius:9, cursor:"pointer", marginBottom:24, width:"100%", textAlign:"left" }}>
-          <AlertCircle size={15} style={{ flexShrink:0 }}/> {totalHuerfanos} de esos "disponibles" son boletos huérfanos de una rifa ya borrada. Toca aquí para limpiarlos en "Gestionar rifas".
+        <button onClick={()=>setTabAdmin("rifas")} style={{ display:"flex", alignItems:"center", gap:8, background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.3)", color:"#f59e0b", fontSize:12, fontWeight:700, padding:"10px 14px", borderRadius:9, cursor:"pointer", margin:"16px 40px 0", textAlign:"left" }}>
+          <AlertCircle size={15} style={{ flexShrink:0 }}/> {totalHuerfanos} boletos huérfanos de una rifa borrada. Haz clic para limpiarlos.
         </button>
       )}
 
-      {/* TABS */}
-      <div style={{ display:"flex", gap:8, marginBottom:28, flexWrap:"wrap" }}>
-        <TAB id="compras" label={`COMPRAS PENDIENTES (${pendientesActivos.length})`} />
-        <TAB id="rifas" label="GESTIONAR RIFAS" />
-        <TAB id="pagos" label="MÉTODOS DE PAGO" />
-        <TAB id="boletos" label={`BOLETOS VENDIDOS (${vendidosTodos.length})`} />
-        <TAB id="ganadores" label={`GANADORES (${historial.length})`} />
-        <TAB id="sorteo" label="SORTEO EN VIVO" />
-        <TAB id="pagina" label="EDITAR PÁGINA" />
-      </div>
+      {/* LAYOUT DOS COLUMNAS */}
+      <div className="admin-layout" style={{ display:"flex", gap:0, marginTop:24, minHeight:"calc(100vh - 200px)" }}>
+
+        {/* SIDEBAR */}
+        <aside className="admin-sidebar" style={{ width:220, minWidth:220, borderRight:"1px solid #232830", padding:"8px 12px", display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}>
+          {[
+            ["compras", "📥 Compras", pendientesActivos.length > 0 ? pendientesActivos.length : null, pendientesActivos.length > 0 ? "#FF6B35" : null],
+            ["rifas", "🎟️ Gestionar rifas", null, null],
+            ["pagos", "💳 Métodos de pago", null, null],
+            ["boletos", "📋 Boletos vendidos", vendidosTodos.length || null, null],
+            ["ganadores", "🏆 Ganadores", historial.length || null, null],
+            ["sorteo", "🎲 Sorteo en vivo", null, null],
+            ["pagina", "✏️ Editar página", null, null],
+          ].map(([id, label, badge, badgeColor]) => (
+            <button key={id} onClick={()=>setTabAdmin(id)} style={{
+              display:"flex", alignItems:"center", justifyContent:"space-between",
+              background: tabAdmin===id ? "#C6FF3D" : "transparent",
+              color: tabAdmin===id ? "#0D0F12" : "#9AA1AC",
+              border: "none",
+              fontWeight: tabAdmin===id ? 800 : 600,
+              fontSize: 13,
+              padding: "11px 14px",
+              borderRadius: 8,
+              cursor: "pointer",
+              textAlign: "left",
+              width: "100%",
+              transition: "background .15s, color .15s",
+            }}>
+              <span>{label}</span>
+              {badge !== null && (
+                <span style={{ background: tabAdmin===id ? "rgba(0,0,0,0.18)" : (badgeColor||"#232830"), color: tabAdmin===id ? "#0D0F12" : "#F2F2EF", fontSize:10, fontWeight:800, padding:"2px 7px", borderRadius:999, minWidth:20, textAlign:"center" }}>{badge}</span>
+              )}
+            </button>
+          ))}
+        </aside>
+
+        {/* CONTENIDO */}
+        <main className="admin-content" style={{ flex:1, padding:"28px 36px", overflowX:"auto" }}>
 
       {/* ---- TAB: COMPRAS ---- */}
       {tabAdmin==="compras" && (
@@ -1901,7 +1938,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
 
       {/* ---- TAB: SORTEO ---- */}
       {tabAdmin==="sorteo" && (
-        <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:22 }}>
+        <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:28, maxWidth:700 }}>
           <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:16, display:"flex", alignItems:"center", gap:8 }}>
             <Award size={17} style={{ color:"#C6FF3D" }}/> Sorteo en vivo
           </h3>
@@ -1966,7 +2003,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
 
       {/* ---- TAB: PÁGINA ---- */}
       {tabAdmin==="pagina" && (
-        <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:22, maxWidth:600 }}>
+        <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:28, maxWidth:900 }}>
           <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:6, display:"flex", alignItems:"center", gap:8 }}>
             <Pencil size={16} style={{ color:"#C6FF3D" }}/> Editar página principal
           </h3>
@@ -2037,6 +2074,8 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
           </div>
         </div>
       )}
-    </main>
+        </main>
+      </div>
+    </div>
   );
 }
