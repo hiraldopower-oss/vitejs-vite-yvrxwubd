@@ -1,4 +1,31 @@
 import { useState, useEffect, useRef } from "react";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDhR3k-9T_QkJmhZQCrjckPsy0z2vNTlgo",
+  authDomain: "hiraldo-power.firebaseapp.com",
+  projectId: "hiraldo-power",
+  storageBucket: "hiraldo-power.firebasestorage.app",
+  messagingSenderId: "435721767032",
+  appId: "1:435721767032:web:9032ec6acac0a269e6058d"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+const dbGet = async (key, def) => {
+  try {
+    const snap = await getDoc(doc(db, "hiraldopower", key));
+    return snap.exists() ? snap.data().value : def;
+  } catch { return def; }
+};
+
+const dbSet = async (key, val) => {
+  try {
+    await setDoc(doc(db, "hiraldopower", key), { value: val });
+  } catch {}
+};
 import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X } from "lucide-react";
 
 /* ============================================================
@@ -83,8 +110,8 @@ function ProgressBar({ vendidos, total }) {
 function RifaCard({ rifa, vendidosCount, onJugar }) {
   const agotada = !rifa.activa || vendidosCount >= rifa.totalBoletos;
   return (
-    <div style={{ background: "#14171C", border: `1px solid ${rifa.destacada ? "rgba(198,255,61,0.3)" : "#232830"}`, borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column", maxWidth: 400, width: "100%", margin: "0 auto" }}>
-      <div style={{ height: 200, background: "#1a1d23", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+    <div style={{ background: "#14171C", border: `1px solid ${rifa.destacada ? "rgba(198,255,61,0.3)" : "#232830"}`, borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column", width: "100%" }}>
+      <div style={{ height: 240, background: "#1a1d23", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
         {rifa.imagen
           ? <img src={rifa.imagen} alt={rifa.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           : <Trophy size={48} style={{ opacity: 0.15, color: "#9AA1AC" }} />
@@ -543,7 +570,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const load = async (key, def) => {
-        try { const r = await window.storage.get(key, true); return r ? JSON.parse(r.value) : def; } catch { return def; }
+      const load = async (key, def) => { return await dbGet(key, def); };
       };
       const generarBoletos = () => { const o={}; for(let i=0;i<1000;i++) o[String(i).padStart(3,"0")]=null; return o; };
       const bRaw = await load("tickets", null);
@@ -558,13 +585,20 @@ export default function App() {
     })();
   }, []);
 
-  const save = async (key, val, setter) => { setter(val); try { await window.storage.set(key, JSON.stringify(val), true); } catch {} };
+  const save = async (key, val, setter) => { setter(val); await dbSet(key, val); };
   const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),3200); };
 
   const vendidosCount = Object.values(boletos).filter(Boolean).length;
   const pctGlobal = Math.round((vendidosCount/1000)*100);
 
   const irARifa = (rifa) => { setRifaActiva(rifa); setView("rifa"); };
+
+  useEffect(() => {
+    const check = () => { if (window.location.hash === "#admin9810") setView("admin"); };
+    check();
+    window.addEventListener("hashchange", check);
+    return () => window.removeEventListener("hashchange", check);
+  }, []);
 
   if (!ready) return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#C6FF3D", gap:12, fontFamily:"'Arial Black',sans-serif", letterSpacing:1 }}>
@@ -580,10 +614,16 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0;}
         @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-        button,input,select{font-family:inherit;}
-        .nb{background:none;border:none;color:#9AA1AC;font-weight:600;font-size:13px;padding:8px 12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:color .15s;}
+        button,input,select,textarea{font-family:inherit;}
+        .nb{background:none;border:none;color:#9AA1AC;font-weight:600;font-size:14px;padding:10px 14px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:color .15s;}
         .nb:hover{color:#F2F2EF;}
         .nb.on{color:#0D0F12;background:#C6FF3D;}
+        @media(max-width:768px){
+          .nb{font-size:12px;padding:8px 10px;}
+          .catalog-section{padding:32px 16px !important;}
+          .hero-section{padding:48px 16px 40px !important;}
+          .header-inner{padding:12px 16px !important;}
+        }
       `}</style>
 
       {toast && (
@@ -594,7 +634,7 @@ export default function App() {
 
       {/* HEADER */}
       <header style={{ position:"sticky", top:0, zIndex:40, background:"rgba(13,15,18,0.92)", backdropFilter:"blur(8px)", borderBottom:"1px solid #232830" }}>
-        <div style={{ maxWidth:1100, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 20px", flexWrap:"wrap", gap:8 }}>
+        <div style={{ maxWidth:1400, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 40px", flexWrap:"wrap", gap:8 }}>
           <button onClick={()=>setView("catalogo")} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:14, letterSpacing:"0.5px", cursor:"pointer" }}>
             <Zap size={22} style={{ color:"#C6FF3D" }}/> HIRALDO <strong style={{ marginLeft:2 }}>POWER</strong>
           </button>
@@ -602,7 +642,6 @@ export default function App() {
             <button className={`nb${view==="catalogo"||view==="rifa"?" on":""}`} onClick={()=>setView("catalogo")}>Rifas</button>
             <button className={`nb${view==="ganadores"?" on":""}`} onClick={()=>setView("ganadores")}><Trophy size={13}/> Ganadores</button>
             <button className={`nb${view==="verify"?" on":""}`} onClick={()=>setView("verify")}><ShieldCheck size={13}/> Verificar boleto</button>
-            <button className={`nb${view==="admin"?" on":""}`} onClick={()=>setView("admin")}><Lock size={13}/> Panel</button>
           </nav>
         </div>
         <div style={{ height:3, background:"#232830" }}>
@@ -622,23 +661,23 @@ export default function App() {
               </div>
             </div>
           )}
-          <section style={{ padding:"64px 20px 48px", borderBottom:"1px solid #232830", position:"relative", overflow:"hidden" }}>
+          <section style={{ padding:"80px 40px 60px", borderBottom:"1px solid #232830", position:"relative", overflow:"hidden" }}>
             <div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(#232830 1px,transparent 1px),linear-gradient(90deg,#232830 1px,transparent 1px)", backgroundSize:"32px 32px", opacity:0.25 }} />
-            <div style={{ position:"relative", maxWidth:760, margin:"0 auto", textAlign:"center" }}>
+            <div style={{ position:"relative", maxWidth:900, margin:"0 auto", textAlign:"center" }}>
               <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, letterSpacing:1, color:"#FF6B35", background:"rgba(255,107,53,0.1)", border:"1px solid rgba(255,107,53,0.3)", padding:"6px 12px", borderRadius:999, marginBottom:24 }}>
                 <Zap size={12}/> HIRALDO POWER · RIFAS EN VIVO
               </div>
-              <h1 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(28px,6vw,50px)", lineHeight:1.08, marginBottom:16 }}>
+              <h1 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(36px,5vw,68px)", lineHeight:1.08, marginBottom:16 }}>
                 CATÁLOGO <span style={{ background:"linear-gradient(90deg,#818cf8,#ec4899)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>DE RIFAS</span>
               </h1>
-              <p style={{ color:"#9AA1AC", fontSize:15, maxWidth:460, margin:"0 auto" }}>Selecciona tu artículo soñado y asegura tu oportunidad.</p>
+              <p style={{ color:"#9AA1AC", fontSize:15, maxWidth:600, margin:"0 auto" }}>Selecciona tu artículo soñado y asegura tu oportunidad.</p>
             </div>
           </section>
-          <section style={{ maxWidth:1100, margin:"0 auto", padding:"48px 20px" }}>
+          <section style={{ maxWidth:1400, margin:"0 auto", padding:"48px 40px" }}>
             {rifas.filter(r=>r.activa).length===0 && (
               <p style={{ color:"#9AA1AC", fontSize:14, textAlign:"center" }}>No hay rifas activas en este momento.</p>
             )}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:20 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:24 }}>
               {rifas.filter(r=>r.activa).map(r=>(
                 <RifaCard key={r.id} rifa={r} vendidosCount={vendidosCount} onJugar={()=>irARifa(r)} />
               ))}
@@ -646,7 +685,7 @@ export default function App() {
             {rifas.filter(r=>!r.activa).length>0 && (
               <>
                 <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color:"#9AA1AC", letterSpacing:1, marginTop:48, marginBottom:16 }}>RIFAS FINALIZADAS</h2>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:20, opacity:0.6 }}>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:24, opacity:0.6 }}>
                   {rifas.filter(r=>!r.activa).map(r=>(
                     <RifaCard key={r.id} rifa={r} vendidosCount={0} onJugar={()=>{}} />
                   ))}
@@ -1293,7 +1332,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   );
 
   return (
-    <main style={{ maxWidth:1100, margin:"0 auto", padding:"40px 20px" }}>
+    <main style={{ maxWidth:1400, margin:"0 auto", padding:"40px 40px" }}>
       {editando && <EditorRifa rifa={editando==="nueva"?null:editando} onGuardar={guardarRifa} onCancelar={()=>setEditando(null)} />}
 
       <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:22, marginBottom:20 }}>PANEL ADMIN</h2>
