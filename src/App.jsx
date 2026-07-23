@@ -491,7 +491,7 @@ function ImageCropper({ src, onCrop, onCancelar }) {
    ============================================================ */
 function EditorRifa({ rifa, onGuardar, onCancelar }) {
   const esNueva = !rifa;
-  const [form, setForm] = useState(rifa ? { ...rifa } : {
+  const [form, setForm] = useState(rifa ? { combos: [], ...rifa } : {
     id: "rifa-" + Date.now(),
     titulo: "",
     subtitulo: "",
@@ -506,8 +506,19 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
     etiquetaColor: "#FF6B35",
     activa: true,
     descripcion: "",
+    combos: [],
   });
-  const [tab, setTab] = useState("info"); // info | fotos | avanzado
+  const [tab, setTab] = useState("info"); // info | fotos | combos | avanzado
+
+  const agregarCombo = () => {
+    setForm(f => ({ ...f, combos: [...(f.combos||[]), { id: "combo-"+Date.now(), cantidad: 5, precio: Math.round((f.precio||100)*5*0.9), etiqueta: "" }] }));
+  };
+  const actualizarCombo = (id, key, val) => {
+    setForm(f => ({ ...f, combos: (f.combos||[]).map(c => c.id===id ? { ...c, [key]: val } : c) }));
+  };
+  const eliminarCombo = (id) => {
+    setForm(f => ({ ...f, combos: (f.combos||[]).filter(c => c.id!==id) }));
+  };
   const [linkFoto, setLinkFoto] = useState("");
   const [showPreview, setShowPreview] = useState(false);
 
@@ -606,6 +617,7 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
           <div style={{ display:"flex", gap:8 }}>
             <TAB_BTN id="info" label="📝 Información" />
             <TAB_BTN id="fotos" label="🖼️ Fotos" />
+            <TAB_BTN id="combos" label="🎟️ Combos" />
             <TAB_BTN id="avanzado" label="⚙️ Avanzado" />
           </div>
         </div>
@@ -765,6 +777,63 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
                   ))}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: COMBOS */}
+          {tab==="combos" && (
+            <div>
+              <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20 }}>
+                Crea paquetes de boletos con precio especial (ej: 5 boletos por RD$450). Se muestran como botones rápidos en la pantalla de compra, además de la opción de cantidad libre.
+              </p>
+
+              {(form.combos||[]).length===0 && (
+                <div style={{ background:"#0D0F12", border:"1px dashed #232830", borderRadius:10, padding:"18px 16px", textAlign:"center", color:"#9AA1AC", fontSize:13, marginBottom:16 }}>
+                  Todavía no hay combos para esta rifa. Solo se venderá con cantidad libre a {fmtMoney(form.precio||0)} por boleto.
+                </div>
+              )}
+
+              {(form.combos||[]).map((combo) => {
+                const precioNormal = (form.precio||0) * (combo.cantidad||0);
+                const ahorro = precioNormal>0 ? Math.round((1 - (combo.precio||0)/precioNormal)*100) : 0;
+                return (
+                  <div key={combo.id} style={{ background:"#0D0F12", border:"1px solid #232830", borderRadius:10, padding:14, marginBottom:12 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:10, alignItems:"end" }}>
+                      <label style={{ display:"block" }}>
+                        <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>CANTIDAD DE BOLETOS</span>
+                        <input type="number" min={1} value={combo.cantidad}
+                          onChange={e=>actualizarCombo(combo.id,"cantidad",Number(e.target.value))}
+                          style={{ width:"100%", background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", padding:"10px 12px", borderRadius:9, fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                      </label>
+                      <label style={{ display:"block" }}>
+                        <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>PRECIO DEL COMBO (RD$)</span>
+                        <input type="number" min={1} value={combo.precio}
+                          onChange={e=>actualizarCombo(combo.id,"precio",Number(e.target.value))}
+                          style={{ width:"100%", background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", padding:"10px 12px", borderRadius:9, fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                      </label>
+                      <label style={{ display:"block" }}>
+                        <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>ETIQUETA (opcional)</span>
+                        <input value={combo.etiqueta||""} placeholder="Ej: MÁS POPULAR"
+                          onChange={e=>actualizarCombo(combo.id,"etiqueta",e.target.value)}
+                          style={{ width:"100%", background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", padding:"10px 12px", borderRadius:9, fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                      </label>
+                      <button onClick={()=>eliminarCombo(combo.id)} title="Eliminar combo"
+                        style={{ background:"none", border:"1px solid rgba(255,84,112,0.3)", color:"#FF5470", width:38, height:38, borderRadius:9, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <Trash2 size={15}/>
+                      </button>
+                    </div>
+                    <div style={{ fontSize:11, color: ahorro>0?"#22c55e":"#9AA1AC", marginTop:10 }}>
+                      {fmtMoney(combo.cantidad? Math.round((combo.precio||0)/combo.cantidad) : 0)} por boleto
+                      {ahorro>0 && ` · ahorra ${ahorro}% vs. precio normal (${fmtMoney(precioNormal)})`}
+                      {ahorro<=0 && combo.precio>=precioNormal && precioNormal>0 && ` · sin descuento vs. precio normal (${fmtMoney(precioNormal)})`}
+                    </div>
+                  </div>
+                );
+              })}
+
+              <button onClick={agregarCombo} style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"none", color:"#F2F2EF", fontSize:13, fontWeight:700, padding:"11px 16px", borderRadius:9, cursor:"pointer" }}>
+                <Plus size={15}/> Agregar combo
+              </button>
             </div>
           )}
 
@@ -1110,9 +1179,14 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
   const minBol = Math.max(1, rifa.minBoletos || 1);
   const disponibles = Math.max(0, rifa.totalBoletos - vendidosCount);
   const maxBol = Math.max(minBol, disponibles);
+  const combosDisponibles = (rifa.combos||[]).filter(c => c.cantidad<=disponibles).sort((a,b)=>a.cantidad-b.cantidad);
+  const [comboSel, setComboSel] = useState(null);
   const [cantidad, setCantidad] = useState(minBol);
   const [showCheckout, setShowCheckout] = useState(false);
-  const total = cantidad * rifa.precio;
+  const total = comboSel ? comboSel.precio : cantidad * rifa.precio;
+  const cantidadFinal = comboSel ? comboSel.cantidad : cantidad;
+  const elegirCombo = (combo) => { setComboSel(combo); setCantidad(combo.cantidad); };
+  const elegirLibre = () => { setComboSel(null); };
   const vencida = sorteoVencido(rifa.fechaSorteo, rifa.horaSorteo || "23:59");
   const cerrada = !rifa.activa || disponibles <= 0 || vencida;
   return (
@@ -1135,6 +1209,33 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
         {minBol > 1 && (
           <p style={{ color:"#f59e0b", fontSize:12, fontWeight:700, marginBottom:20 }}>Mínimo de compra: {minBol} boletos</p>
         )}
+
+        {combosDisponibles.length > 0 && (
+          <div style={{ marginBottom:24 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"#9AA1AC", letterSpacing:"0.5px", marginBottom:10 }}>COMBOS DISPONIBLES</div>
+            <div style={{ display:"grid", gridTemplateColumns:`repeat(${Math.min(combosDisponibles.length,3)}, 1fr)`, gap:10 }}>
+              {combosDisponibles.map(combo => {
+                const activo = comboSel?.id === combo.id;
+                return (
+                  <button key={combo.id} onClick={()=>elegirCombo(combo)}
+                    style={{ position:"relative", textAlign:"center", background: activo?"rgba(198,255,61,0.08)":"#14171C", border:`1.5px solid ${activo?"#C6FF3D":"#232830"}`, borderRadius:12, padding:"14px 10px", cursor:"pointer" }}>
+                    {combo.etiqueta && (
+                      <span style={{ position:"absolute", top:-9, left:"50%", transform:"translateX(-50%)", background:"#FF6B35", color:"#fff", fontSize:9, fontWeight:800, padding:"2px 8px", borderRadius:999, whiteSpace:"nowrap" }}>{combo.etiqueta}</span>
+                    )}
+                    <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:20, color: activo?"#C6FF3D":"#F2F2EF" }}>{combo.cantidad}</div>
+                    <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase", marginBottom:6 }}>boletos</div>
+                    <div style={{ fontSize:14, fontWeight:800, color: activo?"#C6FF3D":"#F2F2EF" }}>{fmtMoney(combo.precio)}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={elegirLibre} style={{ background:"none", border:"none", color: comboSel?"#9AA1AC":"#C6FF3D", fontSize:12, fontWeight:700, marginTop:12, cursor:"pointer", textDecoration:"underline" }}>
+              {comboSel ? "Elegir cantidad libre en su lugar" : "✓ Usando cantidad libre"}
+            </button>
+          </div>
+        )}
+
+        {!comboSel && (
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:24, marginBottom:16, marginTop: minBol>1?0:20 }}>
           <button onClick={()=>setCantidad(c=>Math.max(minBol,c-minBol))} disabled={cantidad<=minBol} style={{ width:48, height:48, borderRadius:12, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", fontSize:22, fontWeight:700, cursor:"pointer", opacity:cantidad<=minBol?0.4:1 }}>−</button>
           <div style={{ textAlign:"center" }}>
@@ -1143,22 +1244,23 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
           </div>
           <button onClick={()=>setCantidad(c=>Math.min(maxBol,c+minBol))} disabled={cantidad>=maxBol} style={{ width:48, height:48, borderRadius:12, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", fontSize:22, fontWeight:700, cursor:"pointer", opacity:cantidad>=maxBol?0.4:1 }}>+</button>
         </div>
+        )}
         <div style={{ textAlign:"center", fontSize:15, marginBottom:18 }}>Total: <strong style={{ fontFamily:"'Arial Black',sans-serif", color:"#C6FF3D" }}>{fmtMoney(total)}</strong></div>
         <button onClick={()=>setShowCheckout(true)} style={{ width:"100%", background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, cursor:"pointer", display:"flex", alignItems:"center", gap:6, justifyContent:"center" }}>
-          Comprar {cantidad} boleto{cantidad>1?"s":""} <ChevronRight size={16}/>
+          Comprar {cantidadFinal} boleto{cantidadFinal>1?"s":""} <ChevronRight size={16}/>
         </button>
       </div>
       )}
       {showCheckout && !cerrada && (
-        <CheckoutModal selected={cantidad} total={total} metodosPago={metodosPago} onClose={()=>setShowCheckout(false)}
+        <CheckoutModal selected={cantidadFinal} total={total} metodosPago={metodosPago} onClose={()=>setShowCheckout(false)}
           onConfirm={async(datos)=>{
-            const nuevo={id:"P"+Date.now(),...datos,cantidad,total,rifaId:rifa.id,rifaTitulo:rifa.titulo,fecha:new Date().toISOString(),estado:"pendiente"};
+            const nuevo={id:"P"+Date.now(),...datos,cantidad:cantidadFinal,total,rifaId:rifa.id,rifaTitulo:rifa.titulo,fecha:new Date().toISOString(),estado:"pendiente"};
             const ok = await setPendientes([...pendientes,nuevo]);
             if(ok===false){
               showToast("Error al guardar. Intenta de nuevo o contacta al organizador.","warn");
               return;
             }
-            setShowCheckout(false); setCantidad(minBol);
+            setShowCheckout(false); setCantidad(minBol); setComboSel(null);
             showToast("¡Compra recibida! Validaremos tu pago en máximo 24 horas.","ok");
           }} />
       )}
