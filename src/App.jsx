@@ -64,6 +64,7 @@ const SITE_CONFIG_INICIAL = {
   subtituloHero: "Selecciona tu artículo soñado y asegura tu oportunidad.",
   footerTexto: "Rifas en vivo y verificables",
   colorAcento: "#C6FF3D",
+  colorTitulo1: "#F2F2EF",
 };
 
 const ADMIN_PIN = "1818";
@@ -1108,7 +1109,7 @@ export default function App() {
               <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, fontWeight:800, letterSpacing:"1.5px", color:"#FF6B35", background:"rgba(255,107,53,0.1)", border:"1px solid rgba(255,107,53,0.3)", padding:"7px 16px", borderRadius:999, marginBottom:28 }}>
                 <Zap size={12}/> {siteConfig.badgeHero}
               </div>
-              <h1 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(48px,6vw,88px)", lineHeight:1.05, marginBottom:20, letterSpacing:"-0.5px" }}>
+              <h1 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:"clamp(48px,6vw,88px)", lineHeight:1.05, marginBottom:20, letterSpacing:"-0.5px", color: siteConfig.colorTitulo1 || "#F2F2EF" }}>
                 {siteConfig.tituloHero1}<br/><span style={{ background:"linear-gradient(90deg,#818cf8,#ec4899)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>{siteConfig.tituloHero2}</span>
               </h1>
               <p style={{ color:"#9AA1AC", fontSize:16, maxWidth:560, margin:"0 auto", lineHeight:1.6 }}>{siteConfig.subtituloHero}</p>
@@ -2367,6 +2368,16 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
               <input type="color" value={formSitio.colorAcento} onChange={e=>setFormSitio(f=>({...f,colorAcento:e.target.value}))}
                 style={{ width:48, height:38, padding:0, border:"1px solid #232830", borderRadius:8, background:"#0D0F12", cursor:"pointer" }} />
               <input value={formSitio.colorAcento} onChange={e=>setFormSitio(f=>({...f,colorAcento:e.target.value}))} placeholder="#C6FF3D"
+                style={{ flex:1, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+            </div>
+          </label>
+
+          <label style={{ display:"block", marginBottom:20 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Color del título — parte 1 (Ej: "JUEGA PARTICIPAS &")</span>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <input type="color" value={formSitio.colorTitulo1 || "#F2F2EF"} onChange={e=>setFormSitio(f=>({...f,colorTitulo1:e.target.value}))}
+                style={{ width:48, height:38, padding:0, border:"1px solid #232830", borderRadius:8, background:"#0D0F12", cursor:"pointer" }} />
+              <input value={formSitio.colorTitulo1 || "#F2F2EF"} onChange={e=>setFormSitio(f=>({...f,colorTitulo1:e.target.value}))} placeholder="#F2F2EF"
                 style={{ flex:1, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
             </div>
           </label>
