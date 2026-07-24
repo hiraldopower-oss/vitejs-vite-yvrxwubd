@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X } from "lucide-react";
+import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -183,55 +183,102 @@ function RifaCard({ rifa, vendidosCount, onJugar }) {
   );
 }
 
+/* ---- Tarjeta de boleto (número + comprador/teléfono enmascarados) ---- */
+function maskNombre(nombre) {
+  const n = (nombre || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!n) return "———";
+  if (n.length <= 6) return n;
+  return n.slice(0, 4) + "***" + n.slice(-2);
+}
+function maskTelefono(tel) {
+  const d = (tel || "").replace(/\D/g, "");
+  if (d.length < 6) return tel || "———";
+  return d.slice(0, 4) + "****" + d.slice(-2);
+}
+function TicketCard({ numero, info, rifa }) {
+  const etiqueta = rifa?.titulo || "Rifa";
+  return (
+    <div style={{ background: "linear-gradient(180deg,#0c1730 0%,#152647 100%)", border: "1px solid rgba(96,165,250,0.18)", borderRadius: 16, overflow: "hidden", boxShadow: "0 6px 20px rgba(0,0,0,0.35)" }}>
+      <div style={{ width: "100%", height: 96, position: "relative", background: "#0c1730" }}>
+        {rifa?.imagen ? (
+          <img src={rifa.imagen} alt={etiqueta} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Trophy size={26} style={{ color: "rgba(255,255,255,0.25)" }} />
+          </div>
+        )}
+      </div>
+      <div style={{ padding: "12px 14px 0" }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#EAF0FA", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {etiqueta}
+        </div>
+      </div>
+      <div style={{ margin: "10px 14px 12px", background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "12px 8px", textAlign: "center" }}>
+        <span style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 30, letterSpacing: 2, color: "#FFD24C" }}>{numero}</span>
+      </div>
+      <div style={{ padding: "0 14px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#9FB0C8" }}>
+          <User size={13} style={{ color: "#60A5FA", flexShrink: 0 }} /> {maskNombre(info?.nombre)}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#9FB0C8" }}>
+          <Phone size={13} style={{ color: "#F87171", flexShrink: 0 }} /> {maskTelefono(info?.telefono)}
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", padding: "9px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+        <span style={{ width: 6, height: 6, borderRadius: 999, background: "#22c55e", display: "inline-block" }} />
+        <span style={{ fontSize: 11, color: "#22c55e", fontWeight: 700 }}>Activo</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---- Verify ---- */
 function Verify({ boletos, pendientes, rifas }) {
   const [tel, setTel] = useState("");
   const [resultado, setResultado] = useState(null);
   const [buscado, setBuscado] = useState(false);
-  const tituloRifa = (rifaId) => (rifas||[]).find(r=>r.id===rifaId)?.titulo || "Rifa";
+  const rifaObj = (rifaId) => (rifas||[]).find(r=>r.id===rifaId);
+  const tituloRifa = (rifaId) => rifaObj(rifaId)?.titulo || "Rifa";
   const buscar = () => {
     setBuscado(true);
     const aprobados = [];
     Object.entries(boletos||{}).forEach(([rifaId, pool]) => {
       Object.entries(pool||{}).forEach(([num,info]) => {
-        if (info && info.telefono===tel.trim()) aprobados.push({ num, rifaId });
+        if (info && info.telefono===tel.trim()) aprobados.push({ num, rifaId, info });
       });
     });
     const pend = (pendientes||[]).filter(p=>p.telefono===tel.trim()&&p.estado==="pendiente");
     setResultado({ aprobados, pendientes: pend });
   };
   return (
-    <div style={{ maxWidth: 480, margin: "0 auto", padding: "40px 20px" }}>
-      <h2 style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 22, marginBottom: 6 }}>VERIFICAR BOLETO</h2>
-      <p style={{ color: "#9AA1AC", fontSize: 13, marginBottom: 24 }}>Ingresa el número de teléfono que usaste al comprar.</p>
-      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-        <input style={{ flex:1, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", padding:"12px 14px", borderRadius:10, fontSize:14, outline:"none" }}
-          placeholder="809-000-0000" value={tel} onChange={e=>setTel(e.target.value)} onKeyDown={e=>e.key==="Enter"&&buscar()} />
-        <button onClick={buscar} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
-          <ShieldCheck size={16}/> Buscar
-        </button>
+    <div style={{ maxWidth: resultado && resultado.aprobados.length>0 ? 1000 : 480, margin: "0 auto", padding: "40px 20px", transition:"max-width .2s" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto" }}>
+        <h2 style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 22, marginBottom: 6 }}>VERIFICAR BOLETO</h2>
+        <p style={{ color: "#9AA1AC", fontSize: 13, marginBottom: 24 }}>Ingresa el número de teléfono que usaste al comprar.</p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+          <input style={{ flex:1, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", padding:"12px 14px", borderRadius:10, fontSize:14, outline:"none" }}
+            placeholder="809-000-0000" value={tel} onChange={e=>setTel(e.target.value)} onKeyDown={e=>e.key==="Enter"&&buscar()} />
+          <button onClick={buscar} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+            <ShieldCheck size={16}/> Buscar
+          </button>
+        </div>
       </div>
       {buscado && resultado && (
-        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
           {resultado.aprobados.length>0 && (
-            <div style={{ display:"flex", gap:12, background:"#14171C", border:"1px solid rgba(198,255,61,0.3)", borderRadius:12, padding:16 }}>
-              <ShieldCheck size={18} style={{ color:"#C6FF3D", flexShrink:0 }} />
-              <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>Boletos aprobados</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {Object.entries(
-                    resultado.aprobados.reduce((acc,{num,rifaId})=>{ (acc[rifaId]=acc[rifaId]||[]).push(num); return acc; },{})
-                  ).map(([rifaId,nums])=>(
-                    <div key={rifaId}>
-                      <div style={{ fontSize:11, color:"#9AA1AC", marginBottom:4 }}>{tituloRifa(rifaId)}</div>
-                      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                        {nums.map(n=><span key={n} style={{ background:"#C6FF3D", color:"#0D0F12", fontFamily:"'Arial Black',sans-serif", fontSize:11, padding:"4px 9px", borderRadius:6 }}>{n}</span>)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+                <ShieldCheck size={18} style={{ color:"#C6FF3D" }} />
+                <span style={{ fontWeight:700, fontSize:14 }}>Boletos aprobados ({resultado.aprobados.length})</span>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:18 }}>
+                {resultado.aprobados.map(({num,rifaId,info})=>(
+                  <TicketCard key={rifaId+"-"+num} numero={num} info={info} rifa={rifaObj(rifaId)} />
+                ))}
               </div>
             </div>
           )}
+          <div style={{ maxWidth: 480, width:"100%" }}>
           {resultado.pendientes.length>0 && (
             <div style={{ display:"flex", gap:12, background:"#14171C", border:"1px solid rgba(255,107,53,0.3)", borderRadius:12, padding:16 }}>
               <Clock size={18} style={{ color:"#FF6B35", flexShrink:0 }} />
@@ -246,6 +293,7 @@ function Verify({ boletos, pendientes, rifas }) {
               <div style={{ fontSize:13 }}>No encontramos boletos con ese número.</div>
             </div>
           )}
+          </div>
         </div>
       )}
     </div>
