@@ -1480,13 +1480,38 @@ function EditorGanador({ ganador, onGuardar, onCancelar }) {
     set("foto", url);
   };
 
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
+
+  const comprimirFotoGanador = (dataUrl, maxPx, quality, cb) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  };
+
   const cargarArchivo = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setSubiendoFoto(true);
     const reader = new FileReader();
     reader.onload = (ev) => {
-      set("foto", ev.target.result);
-      setLinkFoto("");
+      // Comprimimos la foto antes de guardarla: una foto de celular sin comprimir
+      // puede pesar varios MB y Firebase solo permite 1MB por documento, lo que
+      // hacía fallar el guardado completo del ganador (no solo la foto).
+      comprimirFotoGanador(ev.target.result, 1000, 0.78, (compressed) => {
+        set("foto", compressed);
+        setLinkFoto("");
+        setSubiendoFoto(false);
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -1620,9 +1645,9 @@ function EditorGanador({ ganador, onGuardar, onCancelar }) {
         {/* Footer */}
         <div style={{ padding:"16px 22px", borderTop:"1px solid #232830", display:"flex", gap:10, position:"sticky", bottom:0, background:"#14171C" }}>
           <button onClick={onCancelar} style={{ flex:1, background:"none", border:"1px solid #232830", color:"#F2F2EF", fontWeight:700, fontSize:13, padding:"12px 0", borderRadius:10, cursor:"pointer" }}>Cancelar</button>
-          <button onClick={guardar} disabled={!valido}
-            style={{ flex:2, background:valido?"#C6FF3D":"#232830", color:valido?"#0D0F12":"#9AA1AC", border:"none", fontWeight:800, fontSize:13, padding:"12px 0", borderRadius:10, cursor:valido?"pointer":"not-allowed", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-            <Check size={15}/> {esNuevo?"Agregar al historial":"Guardar cambios"}
+          <button onClick={guardar} disabled={!valido || subiendoFoto}
+            style={{ flex:2, background:(valido&&!subiendoFoto)?"#C6FF3D":"#232830", color:(valido&&!subiendoFoto)?"#0D0F12":"#9AA1AC", border:"none", fontWeight:800, fontSize:13, padding:"12px 0", borderRadius:10, cursor:(valido&&!subiendoFoto)?"pointer":"not-allowed", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+            <Check size={15}/> {subiendoFoto?"Procesando foto…":(esNuevo?"Agregar al historial":"Guardar cambios")}
           </button>
         </div>
       </div>
@@ -2216,15 +2241,13 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
             <EditorGanador
               ganador={editandoGanador==="nuevo"?null:editandoGanador}
               onGuardar={async(g)=>{
-                let nuevos;
-                if(historial.find(x=>x.id===g.id)) {
-                  nuevos = historial.map(x=>x.id===g.id?g:x);
-                  showToast("Ganador actualizado ✓","ok");
-                } else {
-                  nuevos = [{...g, id:"H"+Date.now()}, ...historial];
-                  showToast("Ganador agregado ✓","ok");
-                }
-                await saveHistorial(nuevos);
+                const esEdicion = historial.find(x=>x.id===g.id);
+                const nuevos = esEdicion
+                  ? historial.map(x=>x.id===g.id?g:x)
+                  : [{...g, id:"H"+Date.now()}, ...historial];
+                const ok = await saveHistorial(nuevos);
+                if (ok===false) showToast("Error al guardar el ganador. Intenta de nuevo.","warn");
+                else showToast(esEdicion?"Ganador actualizado ✓":"Ganador agregado ✓","ok");
                 setEditandoGanador(null);
               }}
               onCancelar={()=>setEditandoGanador(null)}
