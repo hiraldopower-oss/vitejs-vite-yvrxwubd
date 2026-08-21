@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone } from "lucide-react";
+import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -72,6 +72,26 @@ const ADMIN_PIN = "1818";
 const CATEGORIAS = ["motos", "autos", "efectivo", "tech", "otro"];
 
 const COLORES_RIFA = ["#C6FF3D", "#818cf8", "#FF6B35", "#ec4899", "#22d3ee", "#f59e0b", "#a78bfa", "#34d399"];
+
+/* ---- Sistema de niveles de combos (paquetes de boletos) ---- */
+const ICONOS_COMBO = {
+  bandera: Flag,
+  cohete: Rocket,
+  trofeo: Trophy,
+  corona: Crown,
+  rayo: Zap,
+  llama: Flame,
+  estrella: Sparkles,
+};
+const COLORES_COMBO = ["#22c55e", "#eab308", "#22d3ee", "#3b82f6", "#f59e0b", "#ef4444", "#a78bfa", "#ec4899"];
+const PLANTILLA_COMBOS = [
+  { nombre: "AMATEUR", icono: "bandera", color: "#22c55e", cantidad: 5,   etiqueta: "" },
+  { nombre: "PRO",     icono: "cohete",  color: "#eab308", cantidad: 10,  etiqueta: "POPULAR" },
+  { nombre: "ELITE",   icono: "trofeo",  color: "#22d3ee", cantidad: 15,  etiqueta: "" },
+  { nombre: "CAMPEÓN", icono: "corona",  color: "#3b82f6", cantidad: 25,  etiqueta: "" },
+  { nombre: "LEYENDA", icono: "rayo",    color: "#f59e0b", cantidad: 50,  etiqueta: "VIP" },
+  { nombre: "MÍTICO",  icono: "llama",   color: "#ef4444", cantidad: 100, etiqueta: "MAXIMO" },
+];
 
 const METODOS_PAGO_INICIALES = [
   { id: "mp-1", tipo: "banco", nombre: "Banco Popular", titular: "Hiraldo Power", cuenta: "809-555-0118", activo: true },
@@ -548,7 +568,16 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
   const [tab, setTab] = useState("info"); // info | fotos | combos | avanzado
 
   const agregarCombo = () => {
-    setForm(f => ({ ...f, combos: [...(f.combos||[]), { id: "combo-"+Date.now(), cantidad: 5, precio: Math.round((f.precio||100)*5*0.9), etiqueta: "" }] }));
+    const i = (form.combos||[]).length % COLORES_COMBO.length;
+    setForm(f => ({ ...f, combos: [...(f.combos||[]), { id: "combo-"+Date.now(), nombre:"", icono:"trofeo", color:COLORES_COMBO[i], cantidad: 5, precio: Math.round((f.precio||100)*5), etiqueta: "" }] }));
+  };
+  const cargarPlantillaCombos = () => {
+    const precioBase = form.precio || 1;
+    setForm(f => ({ ...f, combos: PLANTILLA_COMBOS.map(t => ({
+      id: "combo-" + Date.now() + "-" + t.cantidad,
+      nombre: t.nombre, icono: t.icono, color: t.color, etiqueta: t.etiqueta,
+      cantidad: t.cantidad, precio: Math.round(t.cantidad * precioBase),
+    })) }));
   };
   const actualizarCombo = (id, key, val) => {
     setForm(f => ({ ...f, combos: (f.combos||[]).map(c => c.id===id ? { ...c, [key]: val } : c) }));
@@ -820,9 +849,16 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
           {/* TAB: COMBOS */}
           {tab==="combos" && (
             <div>
-              <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20 }}>
-                Crea paquetes de boletos con precio especial (ej: 5 boletos por RD$450). Se muestran como botones rápidos en la pantalla de compra, además de la opción de cantidad libre.
+              <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:16 }}>
+                Crea niveles de paquetes de boletos (ej: AMATEUR, PRO, ELITE...) con ícono, color y precio propio. Se muestran como tarjetas en la pantalla de compra, además de la opción de cantidad libre.
               </p>
+
+              <button onClick={cargarPlantillaCombos} style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(198,255,61,0.08)", border:"1px solid rgba(198,255,61,0.3)", color:"#C6FF3D", fontSize:12, fontWeight:700, padding:"10px 14px", borderRadius:9, cursor:"pointer", marginBottom:16 }}>
+                <Sparkles size={14}/> Cargar plantilla de 6 niveles (AMATEUR → MÍTICO)
+              </button>
+              {(form.combos||[]).length>0 && (
+                <p style={{ color:"#5a6170", fontSize:11, marginTop:-10, marginBottom:16 }}>Usar la plantilla reemplaza los combos actuales de esta rifa.</p>
+              )}
 
               {(form.combos||[]).length===0 && (
                 <div style={{ background:"#0D0F12", border:"1px dashed #232830", borderRadius:10, padding:"18px 16px", textAlign:"center", color:"#9AA1AC", fontSize:13, marginBottom:16 }}>
@@ -833,9 +869,50 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
               {(form.combos||[]).map((combo) => {
                 const precioNormal = (form.precio||0) * (combo.cantidad||0);
                 const ahorro = precioNormal>0 ? Math.round((1 - (combo.precio||0)/precioNormal)*100) : 0;
+                const IconoSel = ICONOS_COMBO[combo.icono] || Trophy;
                 return (
                   <div key={combo.id} style={{ background:"#0D0F12", border:"1px solid #232830", borderRadius:10, padding:14, marginBottom:12 }}>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:10, alignItems:"end" }}>
+                    <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:12 }}>
+                      <div style={{ width:36, height:36, borderRadius:9, background:`${combo.color||"#C6FF3D"}22`, border:`1px solid ${combo.color||"#C6FF3D"}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                        <IconoSel size={17} style={{ color: combo.color||"#C6FF3D" }}/>
+                      </div>
+                      <label style={{ display:"block", flex:1 }}>
+                        <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>NOMBRE DEL NIVEL</span>
+                        <input value={combo.nombre||""} placeholder="Ej: AMATEUR"
+                          onChange={e=>actualizarCombo(combo.id,"nombre",e.target.value)}
+                          style={{ width:"100%", background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", padding:"9px 12px", borderRadius:9, fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                      </label>
+                      <button onClick={()=>eliminarCombo(combo.id)} title="Eliminar combo"
+                        style={{ background:"none", border:"1px solid rgba(255,84,112,0.3)", color:"#FF5470", width:36, height:36, borderRadius:9, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, alignSelf:"flex-end" }}>
+                        <Trash2 size={15}/>
+                      </button>
+                    </div>
+
+                    <div style={{ marginBottom:12 }}>
+                      <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>ÍCONO</span>
+                      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                        {Object.entries(ICONOS_COMBO).map(([key,Icon])=>(
+                          <button key={key} onClick={()=>actualizarCombo(combo.id,"icono",key)}
+                            style={{ width:32, height:32, borderRadius:8, background: combo.icono===key?`${combo.color||"#C6FF3D"}22`:"#14171C", border:`1px solid ${combo.icono===key?(combo.color||"#C6FF3D"):"#232830"}`, color: combo.icono===key?(combo.color||"#C6FF3D"):"#9AA1AC", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                            <Icon size={14}/>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom:12 }}>
+                      <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>COLOR</span>
+                      <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                        {COLORES_COMBO.map(c=>(
+                          <button key={c} onClick={()=>actualizarCombo(combo.id,"color",c)}
+                            style={{ width:26, height:26, borderRadius:"50%", background:c, border: combo.color===c?"2px solid #F2F2EF":"2px solid transparent", cursor:"pointer" }} />
+                        ))}
+                        <input type="color" value={combo.color||"#C6FF3D"} onChange={e=>actualizarCombo(combo.id,"color",e.target.value)}
+                          style={{ width:26, height:26, padding:0, border:"1px solid #232830", borderRadius:"50%", background:"none", cursor:"pointer" }} />
+                      </div>
+                    </div>
+
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
                       <label style={{ display:"block" }}>
                         <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>CANTIDAD DE BOLETOS</span>
                         <input type="number" min={1} value={combo.cantidad}
@@ -850,14 +927,10 @@ function EditorRifa({ rifa, onGuardar, onCancelar }) {
                       </label>
                       <label style={{ display:"block" }}>
                         <span style={{ display:"block", fontSize:11, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>ETIQUETA (opcional)</span>
-                        <input value={combo.etiqueta||""} placeholder="Ej: MÁS POPULAR"
+                        <input value={combo.etiqueta||""} placeholder="Ej: POPULAR, VIP"
                           onChange={e=>actualizarCombo(combo.id,"etiqueta",e.target.value)}
                           style={{ width:"100%", background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", padding:"10px 12px", borderRadius:9, fontSize:14, outline:"none", boxSizing:"border-box" }} />
                       </label>
-                      <button onClick={()=>eliminarCombo(combo.id)} title="Eliminar combo"
-                        style={{ background:"none", border:"1px solid rgba(255,84,112,0.3)", color:"#FF5470", width:38, height:38, borderRadius:9, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                        <Trash2 size={15}/>
-                      </button>
                     </div>
                     <div style={{ fontSize:11, color: ahorro>0?"#22c55e":"#9AA1AC", marginTop:10 }}>
                       {fmtMoney(combo.cantidad? Math.round((combo.precio||0)/combo.cantidad) : 0)} por boleto
@@ -1234,32 +1307,51 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
       <div style={{ marginTop:32 }}>
         <h2 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, marginBottom:6 }}>ELIGE TU CANTIDAD</h2>
         <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:6 }}>Los números se asignan al azar al aprobar tu pago.</p>
-        {minBol > 1 && (
+        {minBol > 1 && combosDisponibles.length===0 && (
           <p style={{ color:"#f59e0b", fontSize:12, fontWeight:700, marginBottom:20 }}>Mínimo de compra: {minBol} boletos</p>
         )}
 
         {combosDisponibles.length > 0 && (
           <div style={{ marginBottom:24 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:"#9AA1AC", letterSpacing:"0.5px", marginBottom:10 }}>COMBOS DISPONIBLES</div>
-            <div style={{ display:"grid", gridTemplateColumns:`repeat(${Math.min(combosDisponibles.length,3)}, 1fr)`, gap:10 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"#9AA1AC", letterSpacing:"0.5px", marginBottom:2 }}>SELECCIONA UN PAQUETE</div>
+            <div style={{ fontSize:11, color:"#5a6170", marginBottom:14 }}>A mayor cantidad, más oportunidades de ganar</div>
+            <div style={{ display:"grid", gridTemplateColumns:`repeat(${Math.min(combosDisponibles.length,3)}, 1fr)`, gap:12 }}>
               {combosDisponibles.map(combo => {
                 const activo = comboSel?.id === combo.id;
+                const color = combo.color || "#C6FF3D";
+                const Icono = ICONOS_COMBO[combo.icono] || Trophy;
                 return (
                   <button key={combo.id} onClick={()=>elegirCombo(combo)}
-                    style={{ position:"relative", textAlign:"center", background: activo?"rgba(198,255,61,0.08)":"#14171C", border:`1.5px solid ${activo?"#C6FF3D":"#232830"}`, borderRadius:12, padding:"14px 10px", cursor:"pointer" }}>
+                    style={{
+                      position:"relative", textAlign:"center", background: activo?`${color}14`:"#14171C",
+                      border:`1.5px solid ${activo?color:"#232830"}`, borderRadius:14, padding:"18px 8px 14px",
+                      cursor:"pointer", transition:"box-shadow .2s, border-color .2s",
+                      boxShadow: activo?`0 0 22px ${color}55`:"none",
+                    }}>
                     {combo.etiqueta && (
-                      <span style={{ position:"absolute", top:-9, left:"50%", transform:"translateX(-50%)", background:"#FF6B35", color:"#fff", fontSize:9, fontWeight:800, padding:"2px 8px", borderRadius:999, whiteSpace:"nowrap" }}>{combo.etiqueta}</span>
+                      <span style={{ position:"absolute", top:-10, left:"50%", transform:"translateX(-50%)", background:color, color:"#0D0F12", fontSize:9, fontWeight:800, padding:"3px 10px", borderRadius:999, whiteSpace:"nowrap", boxShadow:`0 0 10px ${color}88` }}>★ {combo.etiqueta}</span>
                     )}
-                    <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:20, color: activo?"#C6FF3D":"#F2F2EF" }}>{combo.cantidad}</div>
-                    <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase", marginBottom:6 }}>boletos</div>
-                    <div style={{ fontSize:14, fontWeight:800, color: activo?"#C6FF3D":"#F2F2EF" }}>{fmtMoney(combo.precio)}</div>
+                    <div style={{ width:38, height:38, borderRadius:"50%", background:`${color}1f`, border:`1px solid ${color}66`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 8px" }}>
+                      <Icono size={18} style={{ color }}/>
+                    </div>
+                    {combo.nombre && (
+                      <div style={{ fontSize:10, fontWeight:800, letterSpacing:"1px", color, marginBottom:6 }}>{combo.nombre}</div>
+                    )}
+                    <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color: activo?color:"#F2F2EF", lineHeight:1 }}>{combo.cantidad}</div>
+                    <div style={{ fontSize:9, color:"#9AA1AC", textTransform:"uppercase", letterSpacing:"0.5px", margin:"4px 0 10px" }}>números</div>
+                    <div style={{ borderTop:"1px solid #232830", paddingTop:8, fontSize:13, fontWeight:800, color:"#F2F2EF" }}>{fmtMoney(combo.precio)}</div>
                   </button>
                 );
               })}
             </div>
-            <button onClick={elegirLibre} style={{ background:"none", border:"none", color: comboSel?"#9AA1AC":"#C6FF3D", fontSize:12, fontWeight:700, marginTop:12, cursor:"pointer", textDecoration:"underline" }}>
-              {comboSel ? "Elegir cantidad libre en su lugar" : "✓ Usando cantidad libre"}
+            <button onClick={elegirLibre} style={{
+                width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                background:"rgba(198,255,61,0.05)", border:"1.5px dashed rgba(198,255,61,0.4)", color: comboSel?"#9AA1AC":"#C6FF3D",
+                fontSize:12, fontWeight:700, marginTop:14, padding:"12px 0", borderRadius:10, cursor:"pointer",
+              }}>
+              {comboSel ? "Elegir cantidad personalizada" : "✓ Usando cantidad personalizada"}
             </button>
+            {minBol > 1 && <p style={{ textAlign:"center", fontSize:11, color:"#5a6170", marginTop:8 }}>Mínimo {minBol} boletos</p>}
           </div>
         )}
 
