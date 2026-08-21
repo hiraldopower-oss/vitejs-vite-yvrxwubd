@@ -312,35 +312,23 @@ function Ganadores({ historial }) {
           <AlertCircle size={18} style={{ flexShrink:0 }}/> Todavía no hay ganadores confirmados.
         </div>
       )}
-      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
         {(historial||[]).map(h=>(
-          <div key={h.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, overflow:"hidden" }}>
-            {h.foto && (
-              <div style={{ width:"100%", paddingBottom:"177.78%", position:"relative", overflow:"hidden" }}>
-                <img src={h.foto} alt={h.nombre} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
-                <div style={{ position:"absolute", inset:0, background:"linear-gradient(to top, rgba(20,23,28,0.95) 0%, transparent 50%)" }} />
-                <div style={{ position:"absolute", bottom:14, left:16, right:16, display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
-                  <div>
-                    <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:17, color:"#F2F2EF" }}>{h.nombre}</div>
-                    <div style={{ fontSize:12, color:"#C6FF3D", fontWeight:700, marginTop:3 }}>Boleto #{h.numero} · {h.premio}</div>
-                  </div>
-                  <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", textAlign:"right" }}>{new Date(h.fecha).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
-                </div>
+          <div key={h.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, overflow:"hidden", display:"flex", alignItems:"center", gap:12, padding:10 }}>
+            {h.foto ? (
+              <div style={{ width:56, height:56, borderRadius:9, overflow:"hidden", flexShrink:0 }}>
+                <img src={h.foto} alt={h.nombre} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              </div>
+            ) : (
+              <div style={{ width:56, height:56, borderRadius:9, background:"#0D0F12", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <Trophy size={20} style={{ color:"#C6FF3D" }} />
               </div>
             )}
-            {!h.foto && (
-              <div style={{ display:"flex", alignItems:"center", gap:14, padding:"14px 16px" }}>
-                <Trophy size={20} style={{ color:"#C6FF3D", flexShrink:0 }} />
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:700, fontSize:14 }}>{h.premio}</div>
-                  <div style={{ fontSize:12, color:"#9AA1AC", marginTop:2 }}>{h.nombre} · Boleto #{h.numero}</div>
-                </div>
-                <div style={{ fontSize:11, color:"#9AA1AC" }}>{new Date(h.fecha).toLocaleDateString("es-DO")}</div>
-              </div>
-            )}
-            {h.foto && h.telefono && (
-              <div style={{ padding:"8px 16px 12px", fontSize:12, color:"#9AA1AC" }}>📞 {h.telefono}</div>
-            )}
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontWeight:700, fontSize:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{h.nombre}</div>
+              <div style={{ fontSize:12, color:"#C6FF3D", fontWeight:700, marginTop:2 }}>Boleto #{h.numero} · {h.premio}</div>
+            </div>
+            <div style={{ fontSize:11, color:"#9AA1AC", flexShrink:0, textAlign:"right" }}>{new Date(h.fecha).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
           </div>
         ))}
       </div>
@@ -1092,15 +1080,6 @@ export default function App() {
       {/* CATÁLOGO */}
       {view==="catalogo" && (
         <div>
-          {ganador && (
-            <div style={{ display:"flex", alignItems:"center", gap:14, background:"#C6FF3D", color:"#0D0F12", padding:"16px 20px" }}>
-              <PartyPopper size={20}/>
-              <div>
-                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14 }}>¡Tenemos ganador! Boleto #{ganador.numero}</div>
-                <div style={{ fontSize:12, opacity:0.8, marginTop:2 }}>{ganador.nombre} · {new Date(ganador.fecha).toLocaleDateString("es-DO")}</div>
-              </div>
-            </div>
-          )}
           <section className="hero-section" style={{ padding:"100px 60px 80px", borderBottom:"1px solid #232830", position:"relative", overflow:"hidden", minHeight:320, display:"flex", alignItems:"center" }}>
             <div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(#232830 1px,transparent 1px),linear-gradient(90deg,#232830 1px,transparent 1px)", backgroundSize:"40px 40px", opacity:0.2 }} />
             {/* Glow de fondo */}
