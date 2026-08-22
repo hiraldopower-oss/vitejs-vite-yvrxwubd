@@ -1109,6 +1109,28 @@ export default function App() {
     }
   };
 
+  // Agrega una nueva compra pendiente de forma segura: lee el dato más
+  // reciente de Firebase justo antes de guardar (en vez de usar el estado
+  // local, que puede estar desactualizado), para no pisar aprobaciones que
+  // el admin esté haciendo al mismo tiempo en otra pestaña o dispositivo.
+  const agregarPendiente = async (nuevaCompra) => {
+    const pendRef = doc(db, "hiraldopower", "pending");
+    let nextPendFinal = null;
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(pendRef);
+        const pendActual = snap.exists() ? (snap.data().value || []) : [];
+        nextPendFinal = [...pendActual, nuevaCompra];
+        tx.set(pendRef, { value: nextPendFinal });
+      });
+    } catch (e) {
+      console.error("agregarPendiente error:", e);
+      return false;
+    }
+    setPendientes(nextPendFinal);
+    return true;
+  };
+
   const vendidosPorRifa = (rifaId) => Object.values(boletos[rifaId]||{}).filter(Boolean).length;
   const pctGlobal = (() => {
     const activas = rifas.filter(r=>r.activa);
@@ -1289,8 +1311,8 @@ export default function App() {
 
       {/* DETALLE / COMPRA */}
       {view==="rifa" && rifaActiva && (
-        <RifaDetalle rifa={rifas.find(r=>r.id===rifaActiva.id)||rifaActiva} pendientes={pendientes}
-          setPendientes={p=>save("pending",p,setPendientes)} showToast={showToast}
+        <RifaDetalle rifa={rifas.find(r=>r.id===rifaActiva.id)||rifaActiva}
+          agregarPendiente={agregarPendiente} showToast={showToast}
           onVolver={()=>setView("catalogo")} vendidosCount={vendidosPorRifa(rifaActiva.id)} metodosPago={metodosPago} />
       )}
 
@@ -1337,7 +1359,7 @@ export default function App() {
 }
 
 /* ---- Vista detalle / compra ---- */
-function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, vendidosCount, metodosPago }) {
+function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCount, metodosPago }) {
   const minBol = Math.max(1, rifa.minBoletos || 1);
   const disponibles = Math.max(0, rifa.totalBoletos - vendidosCount);
   const maxBol = Math.max(minBol, disponibles);
@@ -1436,7 +1458,7 @@ function RifaDetalle({ rifa, pendientes, setPendientes, showToast, onVolver, ven
         <CheckoutModal selected={cantidadFinal} total={total} metodosPago={metodosPago} onClose={()=>setShowCheckout(false)}
           onConfirm={async(datos)=>{
             const nuevo={id:"P"+Date.now(),...datos,cantidad:cantidadFinal,total,rifaId:rifa.id,rifaTitulo:rifa.titulo,fecha:new Date().toISOString(),estado:"pendiente"};
-            const ok = await setPendientes([...pendientes,nuevo]);
+            const ok = await agregarPendiente(nuevo);
             if(ok===false){
               showToast("Error al guardar. Intenta de nuevo o contacta al organizador.","warn");
               return;
