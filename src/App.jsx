@@ -105,6 +105,7 @@ const RIFAS_INICIALES = [
 
 const SITE_CONFIG_INICIAL = {
   marca: "HIRALDO POWER",
+  logoUrl: "",
   badgeHero: "HIRALDO POWER · RIFAS EN VIVO",
   tituloHero1: "CATÁLOGO",
   tituloHero2: "DE RIFAS",
@@ -1225,7 +1226,9 @@ export default function App() {
       <header style={{ position:"sticky", top:0, zIndex:40, background:"rgba(13,15,18,0.92)", backdropFilter:"blur(8px)", borderBottom:"1px solid #232830" }}>
         <div style={{ maxWidth:1600, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 60px", flexWrap:"wrap", gap:8 }}>
           <button onClick={()=>setView("catalogo")} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:14, letterSpacing:"0.5px", cursor:"pointer" }}>
-            <Zap size={22} style={{ color: siteConfig.colorAcento }}/> {siteConfig.marca}
+            {siteConfig.logoUrl
+              ? <img src={siteConfig.logoUrl} alt={siteConfig.marca} style={{ height:34, width:"auto" }} />
+              : <><Zap size={22} style={{ color: siteConfig.colorAcento }}/> {siteConfig.marca}</>}
           </button>
           <nav style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
             <button className={`nb${view==="catalogo"||view==="rifa"?" on":""}`} onClick={()=>setView("catalogo")}>Rifas</button>
@@ -1337,7 +1340,11 @@ export default function App() {
       )}
 
       <footer style={{ textAlign:"center", padding:"40px 20px 50px", color:"#9AA1AC", fontSize:12, borderTop:"1px solid #232830" }}>
-        <div><Zap size={14} style={{ color: siteConfig.colorAcento, verticalAlign:-2 }}/> <strong style={{ color:"#F2F2EF" }}>{siteConfig.marca}</strong></div>
+        <div>
+          {siteConfig.logoUrl
+            ? <img src={siteConfig.logoUrl} alt={siteConfig.marca} style={{ height:26, width:"auto", verticalAlign:-6 }} />
+            : <><Zap size={14} style={{ color: siteConfig.colorAcento, verticalAlign:-2 }}/> <strong style={{ color:"#F2F2EF" }}>{siteConfig.marca}</strong></>}
+        </div>
         <p style={{ marginTop:6 }}>{siteConfig.footerTexto}</p>
       </footer>
 
@@ -2039,6 +2046,35 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
   const [tabAdmin, setTabAdmin] = useState("compras");
   const [refreshing, setRefreshing] = useState(false);
   const [formSitio, setFormSitio] = useState({ ...SITE_CONFIG_INICIAL, ...siteConfig });
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
+  const comprimirLogo = (dataUrl, maxPx, cb) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL("image/png")); // PNG conserva la transparencia del logo
+    };
+    img.src = dataUrl;
+  };
+  const cargarLogo = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSubiendoLogo(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      comprimirLogo(ev.target.result, 500, (compressed) => {
+        setFormSitio(f => ({ ...f, logoUrl: compressed }));
+        setSubiendoLogo(false);
+      });
+    };
+    reader.readAsDataURL(file);
+  };
   const [guardandoSitio, setGuardandoSitio] = useState(false);
   const [rifaSorteo, setRifaSorteo] = useState(rifas[0]?.id || null);
   const [confirmandoHuerfanos, setConfirmandoHuerfanos] = useState(false);
@@ -2660,9 +2696,33 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
           <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20 }}>Cambia los textos y el color que ven los clientes en el inicio. Se aplica en toda la página al guardar.</p>
 
           <label style={{ display:"block", marginBottom:14 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Logo (header y footer)</span>
+            <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+              <div style={{ width:64, height:64, borderRadius:10, background:"#0D0F12", border:"1px solid #232830", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0 }}>
+                {formSitio.logoUrl
+                  ? <img src={formSitio.logoUrl} alt="Logo" style={{ maxWidth:"100%", maxHeight:"100%" }} />
+                  : <Zap size={22} style={{ color: formSitio.colorAcento }} />}
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <label style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#232830", color:"#F2F2EF", fontSize:12, fontWeight:700, padding:"9px 14px", borderRadius:8, cursor: subiendoLogo?"not-allowed":"pointer", opacity: subiendoLogo?0.6:1, width:"fit-content" }}>
+                  <ImagePlus size={14}/> {subiendoLogo ? "Procesando…" : (formSitio.logoUrl ? "Cambiar logo" : "Subir logo")}
+                  <input type="file" accept="image/*" disabled={subiendoLogo} onChange={cargarLogo} style={{ display:"none" }} />
+                </label>
+                {formSitio.logoUrl && (
+                  <button onClick={()=>setFormSitio(f=>({...f,logoUrl:""}))} style={{ background:"none", border:"none", color:"#FF5470", fontSize:12, fontWeight:700, cursor:"pointer", textAlign:"left", padding:0 }}>
+                    Quitar logo (usar ícono de rayo)
+                  </button>
+                )}
+              </div>
+            </div>
+            <p style={{ fontSize:11, color:"#5a6170", marginTop:8 }}>Usa una imagen con fondo transparente (PNG) para que se vea bien en el header oscuro.</p>
+          </label>
+
+          <label style={{ display:"block", marginBottom:14 }}>
             <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Nombre de la marca (header y footer)</span>
             <input value={formSitio.marca} onChange={e=>setFormSitio(f=>({...f,marca:e.target.value}))} placeholder="Ej: HIRALDO POWER"
               style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+            {formSitio.logoUrl && <p style={{ fontSize:11, color:"#5a6170", marginTop:6 }}>Con logo activo, este nombre no se muestra (el logo ya incluye el texto).</p>}
           </label>
 
           <label style={{ display:"block", marginBottom:14 }}>
