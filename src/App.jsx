@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles } from "lucide-react";
+import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles, Menu } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, runTransaction } from "firebase/firestore";
 
@@ -1071,6 +1071,7 @@ export default function App() {
   const [metodosPago, setMetodosPago] = useState(METODOS_PAGO_INICIALES);
   const [siteConfig, setSiteConfig] = useState(SITE_CONFIG_INICIAL);
   const [toast, setToast] = useState(null);
+  const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
 
   // Actualiza el título de la pestaña del navegador (en vez del nombre del
   // dominio) según el nombre de marca configurado en "Editar página".
@@ -1221,10 +1222,19 @@ export default function App() {
           .admin-content{padding:20px 16px !important;}
           .admin-main{padding:24px 16px !important;}
         }
-        @media(max-width:480px){
-          .header-inner{gap:10px !important;justify-content:center !important;}
-          .header-inner > button{font-size:12px !important;}
-          .header-inner > nav{width:100%;justify-content:center;}
+        @media(max-width:640px){
+          .nav-desktop{display:none !important;}
+          .nav-hamburguesa{display:flex !important;}
+          .nav-movil-panel{display:flex !important;}
+          .header-inner{justify-content:space-between !important;}
+          .buy-inline{display:none !important;}
+          .buy-bar{
+            display:flex !important; align-items:center; justify-content:space-between;
+            position:fixed; left:0; right:0; bottom:0; z-index:100;
+            background:rgba(13,15,18,0.97); backdrop-filter:blur(8px);
+            border-top:1px solid #232830; padding:14px 20px calc(14px + env(safe-area-inset-bottom));
+          }
+          .buy-bar-spacer{display:block !important; height:88px;}
         }
       `}</style>
 
@@ -1243,12 +1253,23 @@ export default function App() {
               : <Zap size={22} style={{ color: siteConfig.colorAcento }}/>}
             {siteConfig.marca}
           </button>
-          <nav style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+          <nav className="nav-desktop" style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
             <button className={`nb${view==="catalogo"||view==="rifa"?" on":""}`} onClick={()=>setView("catalogo")}>Rifas</button>
             <button className={`nb${view==="ganadores"?" on":""}`} onClick={()=>setView("ganadores")}><Trophy size={13}/> Ganadores</button>
             <button className={`nb${view==="verify"?" on":""}`} onClick={()=>setView("verify")}><ShieldCheck size={13}/> Verificar boleto</button>
           </nav>
+          <button className="nav-hamburguesa" onClick={()=>setMenuMovilAbierto(v=>!v)}
+            style={{ display:"none", background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", width:40, height:40, borderRadius:9, cursor:"pointer", alignItems:"center", justifyContent:"center" }}>
+            {menuMovilAbierto ? <X size={18}/> : <Menu size={18}/>}
+          </button>
         </div>
+        {menuMovilAbierto && (
+          <div className="nav-movil-panel" style={{ display:"none", flexDirection:"column", gap:4, padding:"8px 16px 16px", borderTop:"1px solid #232830" }}>
+            <button className={`nb${view==="catalogo"||view==="rifa"?" on":""}`} style={{ justifyContent:"flex-start" }} onClick={()=>{setView("catalogo");setMenuMovilAbierto(false);}}>Rifas</button>
+            <button className={`nb${view==="ganadores"?" on":""}`} style={{ justifyContent:"flex-start" }} onClick={()=>{setView("ganadores");setMenuMovilAbierto(false);}}><Trophy size={13}/> Ganadores</button>
+            <button className={`nb${view==="verify"?" on":""}`} style={{ justifyContent:"flex-start" }} onClick={()=>{setView("verify");setMenuMovilAbierto(false);}}><ShieldCheck size={13}/> Verificar boleto</button>
+          </div>
+        )}
         <div style={{ height:3, background:"#232830" }}>
           <div style={{ height:"100%", width:`${pctGlobal}%`, background: siteConfig.colorAcento, transition:"width .4s" }} />
         </div>
@@ -1481,10 +1502,21 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
           <button onClick={()=>setCantidad(c=>Math.min(maxBol,c+minBol))} disabled={cantidad>=maxBol} style={{ width:48, height:48, borderRadius:12, background:"#14171C", border:"1px solid #232830", color:"#F2F2EF", fontSize:22, fontWeight:700, cursor:"pointer", opacity:cantidad>=maxBol?0.4:1 }}>+</button>
         </div>
         )}
-        <div style={{ textAlign:"center", fontSize:15, marginBottom:18 }}>Total: <strong style={{ fontFamily:"'Arial Black',sans-serif", color:"#C6FF3D" }}>{fmtMoney(total)}</strong></div>
-        <button onClick={()=>setShowCheckout(true)} style={{ width:"100%", background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, cursor:"pointer", display:"flex", alignItems:"center", gap:6, justifyContent:"center" }}>
+        <div className="buy-inline" style={{ textAlign:"center", fontSize:15, marginBottom:18 }}>Total: <strong style={{ fontFamily:"'Arial Black',sans-serif", color:"#C6FF3D" }}>{fmtMoney(total)}</strong></div>
+        <button className="buy-inline" onClick={()=>setShowCheckout(true)} style={{ width:"100%", background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, cursor:"pointer", display:"flex", alignItems:"center", gap:6, justifyContent:"center" }}>
           Comprar {cantidadFinal} boleto{cantidadFinal>1?"s":""} <ChevronRight size={16}/>
         </button>
+        {/* Barra fija abajo, solo en celular (ver estilos @media) */}
+        <div className="buy-bar" style={{ display:"none" }}>
+          <div>
+            <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:20, color:"#F2F2EF", lineHeight:1 }}>{fmtMoney(total)}</div>
+            <div style={{ fontSize:11, color:"#9AA1AC", marginTop:3 }}>{cantidadFinal} boleto{cantidadFinal>1?"s":""}</div>
+          </div>
+          <button onClick={()=>setShowCheckout(true)} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"14px 26px", borderRadius:12, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+            COMPRAR <ChevronRight size={16}/>
+          </button>
+        </div>
+        <div className="buy-bar-spacer" style={{ display:"none" }} />
       </div>
       )}
       {showCheckout && !cerrada && (
