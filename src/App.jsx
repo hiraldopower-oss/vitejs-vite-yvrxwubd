@@ -1297,8 +1297,8 @@ export default function App() {
       {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} rifas={rifas} />}
       {view==="ganadores" && <Ganadores historial={historial} />}
       {view==="admin" && (
-        <Admin boletos={boletos} saveBoletos={saveBoletos}
-          pendientes={pendientes} savePendientes={p=>save("pending",p,setPendientes)}
+        <Admin boletos={boletos} saveBoletos={saveBoletos} setBoletosLocal={setBoletos}
+          pendientes={pendientes} savePendientes={p=>save("pending",p,setPendientes)} setPendientesLocal={setPendientes}
           showToast={showToast} ganador={ganador} saveGanador={g=>save("ganador",g,setGanador)}
           historial={historial} saveHistorial={h=>save("historial",h,setHistorial)}
           vendidosPorRifa={vendidosPorRifa} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
@@ -1993,7 +1993,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, onRefresh }) {
+function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, onRefresh }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [numSorteo, setNumSorteo] = useState("");
@@ -2080,15 +2080,31 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       else { console.error("aprobar error:", e); showToast(`Error al asignar los boletos (${e.code || e.message || "desconocido"}). Intenta de nuevo.`, "warn"); }
       return;
     }
-    // La escritura real y atómica ya quedó guardada arriba; esto solo refleja
-    // el resultado en el estado local de la pantalla (React).
-    await saveBoletos({ ...boletos, [p.rifaId]: nextPoolFinal });
-    await savePendientes(nextPendFinal);
+    // La escritura real y atómica ya quedó guardada arriba. Aquí SOLO se
+    // refleja en la pantalla (React) — no se vuelve a escribir en Firebase,
+    // porque volver a escribir con estos datos podría pisar la aprobación de
+    // otra compra si se procesó casi al mismo tiempo.
+    setBoletosLocal(b => ({ ...b, [p.rifaId]: nextPoolFinal }));
+    setPendientesLocal(nextPendFinal);
     showToast(`${asignados.length} boletos asignados a ${p.nombre}: ${asignados.join(", ")}`, "ok");
   };
 
   const rechazar = async (p) => {
-    await savePendientes(pendientes.filter(x=>x.id!==p.id));
+    const pendRef = doc(db, "hiraldopower", "pending");
+    let nextPendFinal = null;
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(pendRef);
+        const pendActual = snap.exists() ? (snap.data().value || []) : [];
+        nextPendFinal = pendActual.filter(x => x.id !== p.id);
+        tx.set(pendRef, { value: nextPendFinal });
+      });
+    } catch (e) {
+      console.error("rechazar error:", e);
+      showToast("Error al rechazar. Intenta de nuevo.", "warn");
+      return;
+    }
+    setPendientesLocal(nextPendFinal);
     showToast("Compra rechazada","warn");
   };
 
@@ -2108,7 +2124,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       showToast("Error al borrar el boleto. Intenta de nuevo.", "warn");
       return;
     }
-    await saveBoletos({ ...boletos, [rifaId]: nextPoolFinal });
+    setBoletosLocal(b => ({ ...b, [rifaId]: nextPoolFinal }));
     showToast(`Boleto #${num} liberado ✓`, "ok");
   };
 
