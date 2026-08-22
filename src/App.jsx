@@ -193,6 +193,7 @@ function Countdown({ fechaStr, hora }) {
 /* ---- Progress ---- */
 function ProgressBar({ vendidos, total }) {
   const p = Math.min(100, Math.round((vendidos/total)*100));
+  const agotadoReal = vendidos >= total;
   const color = p>=90?"#FF6B35":p>=60?"#f59e0b":"#C6FF3D";
   return (
     <div>
@@ -201,7 +202,7 @@ function ProgressBar({ vendidos, total }) {
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#9AA1AC", fontWeight: 700 }}>
         <span>PROGRESO: <strong style={{ color: "#F2F2EF" }}>{p}%</strong></span>
-        {p>=100 && <span style={{ color: "#FF6B35" }}>¡AGOTADO!</span>}
+        {agotadoReal && <span style={{ color: "#FF6B35" }}>¡AGOTADO!</span>}
       </div>
     </div>
   );
