@@ -385,23 +385,23 @@ function Ganadores({ historial }) {
           <AlertCircle size={18} style={{ flexShrink:0 }}/> Todavía no hay ganadores confirmados.
         </div>
       )}
-      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        {(historial||[]).map(h=>(
-          <div key={h.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, overflow:"hidden", display:"flex", alignItems:"center", gap:12, padding:10 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+        {(historial||[]).slice().sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).map(h=>(
+          <div key={h.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, overflow:"hidden", display:"flex", alignItems:"center", gap:16, padding:14 }}>
             {h.foto ? (
-              <div style={{ width:56, height:56, borderRadius:9, overflow:"hidden", flexShrink:0 }}>
+              <div style={{ width:76, height:76, borderRadius:11, overflow:"hidden", flexShrink:0 }}>
                 <img src={h.foto} alt={h.nombre} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
               </div>
             ) : (
-              <div style={{ width:56, height:56, borderRadius:9, background:"#0D0F12", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                <Trophy size={20} style={{ color:"#C6FF3D" }} />
+              <div style={{ width:76, height:76, borderRadius:11, background:"#0D0F12", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <Trophy size={28} style={{ color:"#C6FF3D" }} />
               </div>
             )}
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontWeight:700, fontSize:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{h.nombre}</div>
-              <div style={{ fontSize:12, color:"#C6FF3D", fontWeight:700, marginTop:2 }}>Boleto #{h.numero} · {h.premio}</div>
+              <div style={{ fontWeight:700, fontSize:17, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{h.nombre}</div>
+              <div style={{ fontSize:14, color:"#C6FF3D", fontWeight:700, marginTop:4 }}>Boleto #{h.numero} · {h.premio}</div>
             </div>
-            <div style={{ fontSize:11, color:"#9AA1AC", flexShrink:0, textAlign:"right" }}>{new Date(h.fecha).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
+            <div style={{ fontSize:12, color:"#9AA1AC", flexShrink:0, textAlign:"right" }}>{new Date(h.fecha).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
           </div>
         ))}
       </div>
