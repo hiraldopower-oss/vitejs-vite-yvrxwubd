@@ -1227,8 +1227,9 @@ export default function App() {
         <div style={{ maxWidth:1600, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 60px", flexWrap:"wrap", gap:8 }}>
           <button onClick={()=>setView("catalogo")} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:14, letterSpacing:"0.5px", cursor:"pointer" }}>
             {siteConfig.logoUrl
-              ? <img src={siteConfig.logoUrl} alt={siteConfig.marca} style={{ height:34, width:"auto" }} />
-              : <><Zap size={22} style={{ color: siteConfig.colorAcento }}/> {siteConfig.marca}</>}
+              ? <img src={siteConfig.logoUrl} alt="" style={{ height:34, width:"auto" }} />
+              : <Zap size={22} style={{ color: siteConfig.colorAcento }}/>}
+            {siteConfig.marca}
           </button>
           <nav style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
             <button className={`nb${view==="catalogo"||view==="rifa"?" on":""}`} onClick={()=>setView("catalogo")}>Rifas</button>
@@ -1342,8 +1343,9 @@ export default function App() {
       <footer style={{ textAlign:"center", padding:"40px 20px 50px", color:"#9AA1AC", fontSize:12, borderTop:"1px solid #232830" }}>
         <div>
           {siteConfig.logoUrl
-            ? <img src={siteConfig.logoUrl} alt={siteConfig.marca} style={{ height:26, width:"auto", verticalAlign:-6 }} />
-            : <><Zap size={14} style={{ color: siteConfig.colorAcento, verticalAlign:-2 }}/> <strong style={{ color:"#F2F2EF" }}>{siteConfig.marca}</strong></>}
+            ? <img src={siteConfig.logoUrl} alt="" style={{ height:26, width:"auto", verticalAlign:-6 }} />
+            : <Zap size={14} style={{ color: siteConfig.colorAcento, verticalAlign:-2 }}/>}
+          {" "}<strong style={{ color:"#F2F2EF" }}>{siteConfig.marca}</strong>
         </div>
         <p style={{ marginTop:6 }}>{siteConfig.footerTexto}</p>
       </footer>
@@ -2722,7 +2724,6 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Nombre de la marca (header y footer)</span>
             <input value={formSitio.marca} onChange={e=>setFormSitio(f=>({...f,marca:e.target.value}))} placeholder="Ej: HIRALDO POWER"
               style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
-            {formSitio.logoUrl && <p style={{ fontSize:11, color:"#5a6170", marginTop:6 }}>Con logo activo, este nombre no se muestra (el logo ya incluye el texto).</p>}
           </label>
 
           <label style={{ display:"block", marginBottom:14 }}>
