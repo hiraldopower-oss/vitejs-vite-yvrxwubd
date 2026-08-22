@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles } from "lucide-react";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, runTransaction } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDhR3k-9T_QkJmhZQCrjckPsy0z2vNTlgo",
@@ -2029,20 +2029,46 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   const totalVendidosActivas = statsPorRifa.reduce((s,x)=>s+x.vendidos,0);
 
   const aprobar = async (p) => {
-    const poolRifa = boletos[p.rifaId] || {};
-    const disponiblesRifa = Object.keys(poolRifa).filter(k=>!poolRifa[k]);
-    if(disponiblesRifa.length<p.cantidad){showToast("No hay suficientes boletos disponibles en esta rifa","warn");return;}
-    const pool=[...disponiblesRifa]; const asignados=[];
-    const nextPool={...poolRifa};
-    for(let i=0;i<p.cantidad&&pool.length;i++){
-      const idx=Math.floor(Math.random()*pool.length);
-      const num=pool.splice(idx,1)[0];
-      nextPool[num]={nombre:p.nombre,telefono:p.telefono,fecha:p.fecha};
-      asignados.push(num);
+    const ticketsRef = doc(db, "hiraldopower", "tickets_" + p.rifaId);
+    const pendRef = doc(db, "hiraldopower", "pending");
+    let asignados = [];
+    let nextPoolFinal = null;
+    let nextPendFinal = null;
+    try {
+      await runTransaction(db, async (tx) => {
+        const ticketsSnap = await tx.get(ticketsRef);
+        const pendSnap = await tx.get(pendRef);
+        const poolActual = ticketsSnap.exists() ? (ticketsSnap.data().value || {}) : {};
+        const pendActual = pendSnap.exists() ? (pendSnap.data().value || []) : [];
+        const target = pendActual.find(x => x.id === p.id);
+        if (!target || target.estado !== "pendiente") throw new Error("YA_PROCESADA");
+        const disponibles = Object.keys(poolActual).filter(k => !poolActual[k]);
+        if (disponibles.length < p.cantidad) throw new Error("SIN_DISPONIBLES");
+        const pool = [...disponibles];
+        const nextPool = { ...poolActual };
+        asignados = [];
+        for (let i = 0; i < p.cantidad && pool.length; i++) {
+          const idx = Math.floor(Math.random() * pool.length);
+          const num = pool.splice(idx, 1)[0];
+          nextPool[num] = { nombre: p.nombre, telefono: p.telefono, fecha: p.fecha };
+          asignados.push(num);
+        }
+        const nextPend = pendActual.map(x => x.id === p.id ? { ...x, estado: "aprobado", asignados } : x);
+        tx.set(ticketsRef, { value: nextPool });
+        tx.set(pendRef, { value: nextPend });
+        nextPoolFinal = nextPool;
+        nextPendFinal = nextPend;
+      });
+    } catch (e) {
+      if (e.message === "SIN_DISPONIBLES") showToast("No hay suficientes boletos disponibles en esta rifa", "warn");
+      else if (e.message === "YA_PROCESADA") showToast("Esta compra ya fue procesada.", "warn");
+      else { console.error("aprobar error:", e); showToast("Error al asignar los boletos. Intenta de nuevo.", "warn"); }
+      return;
     }
-    const next={...boletos, [p.rifaId]: nextPool};
-    await saveBoletos(next);
-    await savePendientes(pendientes.map(x=>x.id===p.id?{...x,estado:"aprobado",asignados}:x));
+    // La escritura real y atómica ya quedó guardada arriba; esto solo refleja
+    // el resultado en el estado local de la pantalla (React).
+    await saveBoletos({ ...boletos, [p.rifaId]: nextPoolFinal });
+    await savePendientes(nextPendFinal);
     showToast(`${asignados.length} boletos asignados a ${p.nombre}: ${asignados.join(", ")}`, "ok");
   };
 
@@ -2052,11 +2078,22 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
   };
 
   const liberarBoleto = async (rifaId, num) => {
-    const poolRifa = boletos[rifaId] || {};
-    const next = {...boletos, [rifaId]: {...poolRifa, [num]: null}};
-    const ok = await saveBoletos(next);
-    if (ok===false) showToast("Error al borrar el boleto. Intenta de nuevo.","warn");
-    else showToast(`Boleto #${num} liberado ✓`,"ok");
+    const ticketsRef = doc(db, "hiraldopower", "tickets_" + rifaId);
+    let nextPoolFinal = null;
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ticketsRef);
+        const poolActual = snap.exists() ? (snap.data().value || {}) : {};
+        nextPoolFinal = { ...poolActual, [num]: null };
+        tx.set(ticketsRef, { value: nextPoolFinal });
+      });
+    } catch (e) {
+      console.error("liberarBoleto error:", e);
+      showToast("Error al borrar el boleto. Intenta de nuevo.", "warn");
+      return;
+    }
+    await saveBoletos({ ...boletos, [rifaId]: nextPoolFinal });
+    showToast(`Boleto #${num} liberado ✓`, "ok");
   };
 
   if (!unlocked) return (
