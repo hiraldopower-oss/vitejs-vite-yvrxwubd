@@ -1355,7 +1355,7 @@ export default function App() {
                   { num:"01", icon:"🎟️", titulo:"Elige tu rifa", desc:"Selecciona el premio que quieres ganar y la cantidad de boletos que deseas." },
                   { num:"02", icon:"💳", titulo:"Realiza tu pago", desc:"Transfiere por banco o paga en efectivo. Sube tu captura de comprobante." },
                   { num:"03", icon:"✅", titulo:"Recibe tu número", desc:"Validamos tu pago en máximo 24 horas y te asignamos números al azar por WhatsApp." },
-                  { num:"04", icon:"🎲", titulo:"¡Espera el sorteo!", desc:"El sorteo se hace en vivo y en público. El ganador se anuncia aquí mismo." },
+                  { num:"04", icon:"🎲", titulo:"¡Espera el sorteo!", desc:"El sorteo se hace con la Lotería Anunciada (100% público y verificable). Anunciamos al ganador en vivo por Instagram y aquí en la página." },
                 ].map(({ num, icon, titulo, desc }) => (
                   <div key={num} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:"28px 22px", position:"relative", overflow:"hidden" }}>
                     <div style={{ position:"absolute", top:16, right:16, fontFamily:"'Arial Black',sans-serif", fontSize:36, color:"rgba(198,255,61,0.06)", lineHeight:1 }}>{num}</div>
@@ -2729,7 +2729,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                   style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
               </label>
               <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-                <input placeholder="Número de la tómbola, ej: 047" value={numSorteo} disabled={!rifaSorteo}
+                <input placeholder="Número de la lotería, ej: 0047" value={numSorteo} disabled={!rifaSorteo}
                   onChange={e=>{setNumSorteo(e.target.value);setConfirmando(false);}}
                   onKeyDown={e=>e.key==="Enter"&&candidato&&!candidato.noEncontrado&&setConfirmando(true)}
                   style={{ flex:1, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"12px 14px", borderRadius:10, fontSize:14, outline:"none" }} />
@@ -2755,7 +2755,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             </>
           )}
           <div style={{ display:"flex", alignItems:"center", gap:10, background:"rgba(255,107,53,0.08)", border:"1px solid rgba(255,107,53,0.25)", color:"#FF6B35", padding:"14px 16px", borderRadius:10, fontSize:13, marginTop:24 }}>
-            <Trophy size={16}/> Solo entran a la tómbola los boletos vendidos y aprobados de la rifa seleccionada.
+            <Trophy size={16}/> Solo entran al sorteo los boletos vendidos y aprobados de la rifa seleccionada.
           </div>
         </div>
       )}
@@ -2870,4 +2870,4 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
       </div>
     </div>
   );
-          }
+}
