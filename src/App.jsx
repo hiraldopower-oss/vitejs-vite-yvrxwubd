@@ -1235,6 +1235,7 @@ export default function App() {
             border-top:1px solid #232830; padding:14px 20px calc(14px + env(safe-area-inset-bottom));
           }
           .buy-bar-spacer{display:block !important; height:88px;}
+          .whatsapp-fab.with-buybar{bottom:100px !important;}
         }
       `}</style>
 
@@ -1388,8 +1389,9 @@ export default function App() {
         <a href="https://wa.me/18293108799?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20las%20rifas%20%F0%9F%8E%9F%EF%B8%8F"
           target="_blank" rel="noopener noreferrer"
           title="Escribenos por WhatsApp"
+          className={`whatsapp-fab${view==="rifa" ? " with-buybar" : ""}`}
           style={{
-            position:"fixed", bottom:24, right:24, zIndex:200,
+            position:"fixed", bottom:24, right:24, zIndex:90,
             width:60, height:60, borderRadius:"50%",
             background:"#25D366",
             display:"flex", alignItems:"center", justifyContent:"center",
