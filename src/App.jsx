@@ -49,16 +49,30 @@ const generarBoletosRifa = (total) => {
 // una rifa tiene muchos boletos (ej. 10,000 en Pick 4) o cuando se acumulan
 // varias rifas. Si el documento nuevo todavía no existe, migra automáticamente
 // lo que hubiera en el formato antiguo (todas las rifas en un solo documento).
+// Lee/guarda el pool de boletos de una rifa como UN SOLO TEXTO (JSON), no como
+// mapa nativo de Firestore. Guardarlo como mapa nativo con miles de llaves hace
+// que Firestore intente indexar cada boleto por separado, y al llegar a varios
+// miles de boletos vendidos choca con el límite de "too many index entries"
+// de Firestore. Como texto plano, Firestore lo trata como un solo campo y ese
+// límite deja de aplicar, sin importar cuántos boletos tenga la rifa.
+const leerPoolBoletos = async (rifaId) => {
+  const raw = await dbGet("tickets_" + rifaId, null);
+  if (!raw) return null;
+  if (typeof raw === "string") { try { return JSON.parse(raw); } catch { return null; } }
+  return raw; // formato antiguo (mapa nativo guardado antes de este cambio)
+};
+const guardarPoolBoletos = (rifaId, pool) => dbSet("tickets_" + rifaId, JSON.stringify(pool));
+
 const cargarTodosLosBoletos = async (listaRifas) => {
   const legacy = await dbGet("tickets", null);
   const esFormatoPlanoViejo = legacy && Object.keys(legacy).length > 0 && Object.keys(legacy).every(k => /^\d{3}$/.test(k));
   const b = {};
   for (const rifa of (listaRifas || [])) {
-    let pool = await dbGet("tickets_" + rifa.id, null);
+    let pool = await leerPoolBoletos(rifa.id);
     if (!pool && legacy) {
       if (legacy[rifa.id]) pool = legacy[rifa.id];
       else if (esFormatoPlanoViejo && listaRifas[0]?.id === rifa.id) pool = legacy;
-      if (pool) await dbSet("tickets_" + rifa.id, pool); // migración: se guarda ya separado para el futuro
+      if (pool) await guardarPoolBoletos(rifa.id, pool); // migración: se guarda ya en el nuevo formato
     }
     if (!pool) pool = generarBoletosRifa(rifa.totalBoletos);
     b[rifa.id] = pool;
@@ -1082,7 +1096,7 @@ export default function App() {
       const eliminados = idsPrev.filter(id => !(id in nextBoletos));
       let ok = true;
       for (const id of cambiados) {
-        const r = await dbSet("tickets_" + id, nextBoletos[id]);
+        const r = await guardarPoolBoletos(id, nextBoletos[id]);
         if (!r) ok = false;
       }
       for (const id of eliminados) {
@@ -2038,7 +2052,8 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       await runTransaction(db, async (tx) => {
         const ticketsSnap = await tx.get(ticketsRef);
         const pendSnap = await tx.get(pendRef);
-        const poolActual = ticketsSnap.exists() ? (ticketsSnap.data().value || {}) : {};
+        const rawPool = ticketsSnap.exists() ? ticketsSnap.data().value : null;
+        const poolActual = rawPool ? (typeof rawPool === "string" ? JSON.parse(rawPool) : rawPool) : {};
         const pendActual = pendSnap.exists() ? (pendSnap.data().value || []) : [];
         const target = pendActual.find(x => x.id === p.id);
         if (!target || target.estado !== "pendiente") throw new Error("YA_PROCESADA");
@@ -2054,7 +2069,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
           asignados.push(num);
         }
         const nextPend = pendActual.map(x => x.id === p.id ? { ...x, estado: "aprobado", asignados } : x);
-        tx.set(ticketsRef, { value: nextPool });
+        tx.set(ticketsRef, { value: JSON.stringify(nextPool) });
         tx.set(pendRef, { value: nextPend });
         nextPoolFinal = nextPool;
         nextPendFinal = nextPend;
@@ -2062,7 +2077,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
     } catch (e) {
       if (e.message === "SIN_DISPONIBLES") showToast("No hay suficientes boletos disponibles en esta rifa", "warn");
       else if (e.message === "YA_PROCESADA") showToast("Esta compra ya fue procesada.", "warn");
-      else { console.error("aprobar error:", e); showToast("Error al asignar los boletos. Intenta de nuevo.", "warn"); }
+      else { console.error("aprobar error:", e); showToast(`Error al asignar los boletos (${e.code || e.message || "desconocido"}). Intenta de nuevo.`, "warn"); }
       return;
     }
     // La escritura real y atómica ya quedó guardada arriba; esto solo refleja
@@ -2083,9 +2098,10 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
     try {
       await runTransaction(db, async (tx) => {
         const snap = await tx.get(ticketsRef);
-        const poolActual = snap.exists() ? (snap.data().value || {}) : {};
+        const raw = snap.exists() ? snap.data().value : null;
+        const poolActual = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
         nextPoolFinal = { ...poolActual, [num]: null };
-        tx.set(ticketsRef, { value: nextPoolFinal });
+        tx.set(ticketsRef, { value: JSON.stringify(nextPoolFinal) });
       });
     } catch (e) {
       console.error("liberarBoleto error:", e);
