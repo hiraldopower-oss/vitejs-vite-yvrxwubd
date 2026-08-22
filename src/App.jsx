@@ -192,8 +192,12 @@ function Countdown({ fechaStr, hora }) {
 
 /* ---- Progress ---- */
 function ProgressBar({ vendidos, total }) {
-  const p = Math.min(100, Math.round((vendidos/total)*100));
+  const pRaw = total>0 ? (vendidos/total)*100 : 0;
+  const p = Math.min(100, Math.round(pRaw)); // para el ancho de la barra
   const agotadoReal = vendidos >= total;
+  // El texto usa un decimal y nunca redondea a "100%" si en realidad quedan
+  // boletos disponibles, para no confundir al cliente a la hora de comprar.
+  const pTexto = agotadoReal ? "100" : Math.min(99.9, pRaw).toFixed(1);
   const color = p>=90?"#FF6B35":p>=60?"#f59e0b":"#C6FF3D";
   return (
     <div>
@@ -201,7 +205,7 @@ function ProgressBar({ vendidos, total }) {
         <div style={{ height: "100%", width: `${p}%`, background: color, borderRadius: 999, transition: "width .4s" }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#9AA1AC", fontWeight: 700 }}>
-        <span>PROGRESO: <strong style={{ color: "#F2F2EF" }}>{p}%</strong></span>
+        <span>PROGRESO: <strong style={{ color: "#F2F2EF" }}>{pTexto}%</strong></span>
         {agotadoReal && <span style={{ color: "#FF6B35" }}>¡AGOTADO!</span>}
       </div>
     </div>
