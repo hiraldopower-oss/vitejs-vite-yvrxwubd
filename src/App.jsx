@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles, Menu } from "lucide-react";
+import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles, Menu, Home } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, runTransaction } from "firebase/firestore";
 
@@ -1206,6 +1206,8 @@ export default function App() {
         body{margin:0;padding:0;background:#0D0F12;}
         @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+        @keyframes fadein{from{opacity:0}to{opacity:1}}
+        @keyframes slidein-drawer{from{transform:translateX(100%)}to{transform:translateX(0)}}
         button,input,select,textarea{font-family:inherit;}
         .nb{background:none;border:none;color:#9AA1AC;font-weight:600;font-size:14px;padding:10px 14px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:color .15s;}
         .nb:hover{color:#F2F2EF;}
@@ -1225,7 +1227,6 @@ export default function App() {
         @media(max-width:640px){
           .nav-desktop{display:none !important;}
           .nav-hamburguesa{display:flex !important;}
-          .nav-movil-panel{display:flex !important;}
           .header-inner{justify-content:space-between !important;}
           .buy-inline{display:none !important;}
           .buy-bar{
@@ -1264,17 +1265,37 @@ export default function App() {
             {menuMovilAbierto ? <X size={18}/> : <Menu size={18}/>}
           </button>
         </div>
-        {menuMovilAbierto && (
-          <div className="nav-movil-panel" style={{ display:"none", flexDirection:"column", gap:4, padding:"8px 16px 16px", borderTop:"1px solid #232830" }}>
-            <button className={`nb${view==="catalogo"||view==="rifa"?" on":""}`} style={{ justifyContent:"flex-start" }} onClick={()=>{setView("catalogo");setMenuMovilAbierto(false);}}>Rifas</button>
-            <button className={`nb${view==="ganadores"?" on":""}`} style={{ justifyContent:"flex-start" }} onClick={()=>{setView("ganadores");setMenuMovilAbierto(false);}}><Trophy size={13}/> Ganadores</button>
-            <button className={`nb${view==="verify"?" on":""}`} style={{ justifyContent:"flex-start" }} onClick={()=>{setView("verify");setMenuMovilAbierto(false);}}><ShieldCheck size={13}/> Verificar boleto</button>
-          </div>
-        )}
         <div style={{ height:3, background:"#232830" }}>
           <div style={{ height:"100%", width:`${pctGlobal}%`, background: siteConfig.colorAcento, transition:"width .4s" }} />
         </div>
       </header>
+
+      {/* MENÚ LATERAL MÓVIL (drawer) */}
+      {menuMovilAbierto && (
+        <div style={{ position:"fixed", inset:0, zIndex:250 }}>
+          <div onClick={()=>setMenuMovilAbierto(false)} style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.6)", animation:"fadein .2s ease" }} />
+          <div style={{ position:"absolute", top:0, right:0, bottom:0, width:"78%", maxWidth:320, background:"#0D0F12", borderLeft:"1px solid #232830", boxShadow:"-8px 0 30px rgba(0,0,0,0.5)", animation:"slidein-drawer .22s ease", display:"flex", flexDirection:"column" }}>
+            <div style={{ padding:"22px 24px", borderBottom:"1px solid #232830", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <span style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, letterSpacing:"1px", color: siteConfig.colorAcento }}>MENÚ</span>
+              <button onClick={()=>setMenuMovilAbierto(false)} style={{ background:"none", border:"none", color:"#9AA1AC", cursor:"pointer", padding:6 }}>
+                <X size={20}/>
+              </button>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", padding:"10px 8px" }}>
+              {[
+                { id:"catalogo", label:"Inicio", icon:Home, activo: view==="catalogo"||view==="rifa" },
+                { id:"ganadores", label:"Ganadores", icon:Trophy, activo: view==="ganadores" },
+                { id:"verify", label:"Verificar boleto", icon:ShieldCheck, activo: view==="verify" },
+              ].map(({id,label,icon:Icon,activo})=>(
+                <button key={id} onClick={()=>{setView(id);setMenuMovilAbierto(false);}}
+                  style={{ display:"flex", alignItems:"center", gap:16, background:"none", border:"none", color: activo?siteConfig.colorAcento:"#F2F2EF", fontSize:16, fontWeight:700, letterSpacing:"0.5px", padding:"16px 16px", cursor:"pointer", textAlign:"left", borderRadius:10 }}>
+                  <Icon size={20} style={{ color: activo?siteConfig.colorAcento:"#9AA1AC" }}/> {label.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CATÁLOGO */}
       {view==="catalogo" && (
