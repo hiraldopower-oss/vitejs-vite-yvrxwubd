@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles } from "lucide-react";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDhR3k-9T_QkJmhZQCrjckPsy0z2vNTlgo",
@@ -31,6 +31,39 @@ const dbSet = async (key, val) => {
     console.error("Firebase dbSet error:", key, e?.message || e);
     return false;
   }
+};
+
+// Genera el número de boleto con la cantidad de dígitos correcta según el
+// total de boletos de la rifa (3 dígitos para 1,000 = Pick 3, 4 dígitos
+// para 10,000 = Pick 4, etc.), en vez de forzar siempre 3 dígitos.
+const generarBoletosRifa = (total) => {
+  const w = String(Math.max(0, total - 1)).length;
+  const o = {};
+  for (let i = 0; i < total; i++) o[String(i).padStart(w, "0")] = null;
+  return o;
+};
+
+// Cada rifa guarda sus boletos en su PROPIO documento de Firebase
+// ("tickets_<idDeLaRifa>") en vez de todas juntas en un solo documento.
+// Esto evita chocar con el límite de 1MB por documento de Firebase cuando
+// una rifa tiene muchos boletos (ej. 10,000 en Pick 4) o cuando se acumulan
+// varias rifas. Si el documento nuevo todavía no existe, migra automáticamente
+// lo que hubiera en el formato antiguo (todas las rifas en un solo documento).
+const cargarTodosLosBoletos = async (listaRifas) => {
+  const legacy = await dbGet("tickets", null);
+  const esFormatoPlanoViejo = legacy && Object.keys(legacy).length > 0 && Object.keys(legacy).every(k => /^\d{3}$/.test(k));
+  const b = {};
+  for (const rifa of (listaRifas || [])) {
+    let pool = await dbGet("tickets_" + rifa.id, null);
+    if (!pool && legacy) {
+      if (legacy[rifa.id]) pool = legacy[rifa.id];
+      else if (esFormatoPlanoViejo && listaRifas[0]?.id === rifa.id) pool = legacy;
+      if (pool) await dbSet("tickets_" + rifa.id, pool); // migración: se guarda ya separado para el futuro
+    }
+    if (!pool) pool = generarBoletosRifa(rifa.totalBoletos);
+    b[rifa.id] = pool;
+  }
+  return b;
 };
 
 /* ============================================================
@@ -1022,19 +1055,8 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const load = async (key, def) => { return await dbGet(key, def); };
-      const generarBoletosRifa = (total) => { const o={}; for(let i=0;i<total;i++) o[String(i).padStart(3,"0")]=null; return o; };
       const r = await load("rifas", RIFAS_INICIALES);
-      const bRaw = await load("tickets", null);
-      let b = bRaw || {};
-      // Migración: si "tickets" viene en el formato viejo (plano, sin agrupar por rifa), lo movemos a la primera rifa existente
-      const esFormatoViejo = bRaw && Object.keys(bRaw).length>0 && Object.keys(bRaw).every(k=>/^\d{3}$/.test(k));
-      if (esFormatoViejo && r[0]) {
-        b = { [r[0].id]: bRaw };
-      }
-      // Asegura que cada rifa tenga su pool de boletos generado
-      r.forEach(rifa => {
-        if (!b[rifa.id]) b[rifa.id] = generarBoletosRifa(rifa.totalBoletos);
-      });
+      const b = await cargarTodosLosBoletos(r);
       const p = await load("pending", []);
       const g = await load("ganador", null);
       const h = await load("historial", []);
@@ -1048,6 +1070,31 @@ export default function App() {
   const save = async (key, val, setter) => { setter(val); const ok = await dbSet(key, val); return ok; };
   const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),3200); };
 
+  // Guarda solo las rifas cuyo pool de boletos cambió (cada una en su propio
+  // documento de Firebase), y elimina el documento de las rifas que ya no existen.
+  const saveBoletos = async (nextBoletos) => {
+    const prevBoletos = boletos;
+    setBoletos(nextBoletos);
+    try {
+      const idsPrev = Object.keys(prevBoletos);
+      const idsNext = Object.keys(nextBoletos);
+      const cambiados = idsNext.filter(id => prevBoletos[id] !== nextBoletos[id]);
+      const eliminados = idsPrev.filter(id => !(id in nextBoletos));
+      let ok = true;
+      for (const id of cambiados) {
+        const r = await dbSet("tickets_" + id, nextBoletos[id]);
+        if (!r) ok = false;
+      }
+      for (const id of eliminados) {
+        try { await deleteDoc(doc(db, "hiraldopower", "tickets_" + id)); } catch {}
+      }
+      return ok;
+    } catch (e) {
+      console.error("saveBoletos error:", e);
+      return false;
+    }
+  };
+
   const vendidosPorRifa = (rifaId) => Object.values(boletos[rifaId]||{}).filter(Boolean).length;
   const pctGlobal = (() => {
     const activas = rifas.filter(r=>r.activa);
@@ -1059,9 +1106,9 @@ export default function App() {
   const refreshFromFirebase = async () => {
     try {
       const p = await dbGet("pending", []);
-      const b = await dbGet("tickets", {});
-      const h = await dbGet("historial", []);
       const r = await dbGet("rifas", RIFAS_INICIALES);
+      const b = await cargarTodosLosBoletos(r);
+      const h = await dbGet("historial", []);
       const sc = await dbGet("siteConfig", SITE_CONFIG_INICIAL);
       setPendientes(p);
       setBoletos(b);
@@ -1087,12 +1134,12 @@ export default function App() {
       try {
         const p = await dbGet("pending", []);
         setPendientes(p);
-        const b = await dbGet("tickets", {});
+        const b = await cargarTodosLosBoletos(rifas);
         setBoletos(b);
       } catch {}
     }, 20000); // cada 20 segundos
     return () => clearInterval(intervalo);
-  }, [view]);
+  }, [view, rifas]);
 
   if (!ready) return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#C6FF3D", gap:12, fontFamily:"'Arial Black',sans-serif", letterSpacing:1 }}>
@@ -1236,7 +1283,7 @@ export default function App() {
       {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} rifas={rifas} />}
       {view==="ganadores" && <Ganadores historial={historial} />}
       {view==="admin" && (
-        <Admin boletos={boletos} saveBoletos={b=>save("tickets",b,setBoletos)}
+        <Admin boletos={boletos} saveBoletos={saveBoletos}
           pendientes={pendientes} savePendientes={p=>save("pending",p,setPendientes)}
           showToast={showToast} ganador={ganador} saveGanador={g=>save("ganador",g,setGanador)}
           historial={historial} saveHistorial={h=>save("historial",h,setHistorial)}
@@ -1965,6 +2012,21 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
     Object.entries(pool||{}).filter(([,v])=>v).map(([num,info])=>({rifaId,num,info}))
   );
   const pendientesActivos = pendientes.filter(p=>p.estado==="pendiente");
+  const pendientesAprobados = pendientes.filter(p=>p.estado==="aprobado");
+
+  const rifasActivas = rifas.filter(r=>r.activa).slice().sort((a,b)=>new Date(a.fechaSorteo)-new Date(b.fechaSorteo));
+  const statsPorRifa = rifasActivas.map(r=>{
+    const vendidos = vendidosPorRifa(r.id);
+    const disponibles = Math.max(0, r.totalBoletos - vendidos);
+    const pct = r.totalBoletos>0 ? Math.round((vendidos/r.totalBoletos)*100) : 0;
+    const comprasRifa = pendientesAprobados.filter(p=>p.rifaId===r.id);
+    const recaudado = comprasRifa.reduce((s,p)=>s+(p.total||0),0);
+    const proyeccion = r.totalBoletos * (r.precio||0);
+    const dias = Math.ceil((new Date(r.fechaSorteo) - new Date()) / 86400000);
+    return { rifa:r, vendidos, disponibles, pct, numCompras:comprasRifa.length, recaudado, proyeccion, dias };
+  });
+  const totalRecaudadoActivas = statsPorRifa.reduce((s,x)=>s+x.recaudado,0);
+  const totalVendidosActivas = statsPorRifa.reduce((s,x)=>s+x.vendidos,0);
 
   const aprobar = async (p) => {
     const poolRifa = boletos[p.rifaId] || {};
@@ -2015,8 +2077,10 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
 
   const candidato = (() => {
     if(!numSorteo.trim()||!rifaSorteo) return null;
-    const key=numSorteo.trim().padStart(3,"0");
-    const info=(boletos[rifaSorteo]||{})[key];
+    const poolRifa = boletos[rifaSorteo]||{};
+    const anchoClaves = Object.keys(poolRifa)[0]?.length || 3;
+    const key=numSorteo.trim().padStart(anchoClaves,"0");
+    const info=poolRifa[key];
     return info?{numero:key,...info}:{numero:key,noEncontrado:true};
   })();
 
@@ -2046,14 +2110,17 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
       return;
     }
     if (esNueva && !boletos[form.id]) {
-      const poolNuevo = {}; for(let i=0;i<form.totalBoletos;i++) poolNuevo[String(i).padStart(3,"0")]=null;
+      const w = String(Math.max(0,form.totalBoletos-1)).length;
+      const poolNuevo = {}; for(let i=0;i<form.totalBoletos;i++) poolNuevo[String(i).padStart(w,"0")]=null;
       await saveBoletos({...boletos, [form.id]: poolNuevo});
     } else if (!esNueva) {
       // Si se aumentó el total de boletos, se agregan los números nuevos faltantes (sin tocar los ya vendidos)
       const poolActual = boletos[form.id] || {};
+      const clavesExistentes = Object.keys(poolActual);
+      const w = clavesExistentes[0]?.length || String(Math.max(0,form.totalBoletos-1)).length;
       const poolActualizado = {...poolActual};
       for (let i=0; i<form.totalBoletos; i++) {
-        const key = String(i).padStart(3,"0");
+        const key = String(i).padStart(w,"0");
         if (!(key in poolActualizado)) poolActualizado[key] = null;
       }
       if (Object.keys(poolActualizado).length !== Object.keys(poolActual).length) {
@@ -2123,6 +2190,7 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
         {/* SIDEBAR */}
         <aside className="admin-sidebar" style={{ width:220, minWidth:220, borderRight:"1px solid #232830", padding:"8px 12px", display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}>
           {[
+            ["resumen", "📊 Contabilidad", null, null],
             ["compras", "📥 Compras", pendientesActivos.length > 0 ? pendientesActivos.length : null, pendientesActivos.length > 0 ? "#FF6B35" : null],
             ["rifas", "🎟️ Gestionar rifas", null, null],
             ["pagos", "💳 Métodos de pago", null, null],
@@ -2155,6 +2223,75 @@ function Admin({ boletos, saveBoletos, pendientes, savePendientes, showToast, ga
 
         {/* CONTENIDO */}
         <main className="admin-content" style={{ flex:1, padding:"28px 36px", overflowX:"auto" }}>
+
+      {/* ---- TAB: CONTABILIDAD ---- */}
+      {tabAdmin==="resumen" && (
+        <div>
+          {rifasActivas.length===0 && <p style={{ color:"#9AA1AC", fontSize:13 }}>No hay rifas activas por ahora.</p>}
+
+          {rifasActivas.length>0 && (
+            <div style={{ display:"flex", gap:12, marginBottom:24, flexWrap:"wrap" }}>
+              <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"14px 22px", minWidth:150 }}>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color:"#C6FF3D" }}>{fmtMoney(totalRecaudadoActivas)}</div>
+                <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Recaudado (rifas activas)</div>
+              </div>
+              <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"14px 22px", minWidth:150 }}>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color:"#F2F2EF" }}>{totalVendidosActivas}</div>
+                <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Boletos vendidos</div>
+              </div>
+              <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"14px 22px", minWidth:150 }}>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color:"#818cf8" }}>{rifasActivas.length}</div>
+                <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Rifas activas</div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {statsPorRifa.map(({rifa:r, vendidos, disponibles, pct, numCompras, recaudado, proyeccion, dias}, idx)=>{
+              const color = COLORES_RIFA[idx % COLORES_RIFA.length];
+              return (
+                <div key={r.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:20, borderLeft:`3px solid ${color}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:10, marginBottom:14 }}>
+                    <div>
+                      <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:16 }}>{r.titulo}</div>
+                      <div style={{ fontSize:12, color:"#9AA1AC", marginTop:2 }}>
+                        Sorteo {new Date(r.fechaSorteo).toLocaleDateString("es-DO")} · {dias>=0 ? `faltan ${dias} día${dias!==1?"s":""}` : "sorteo ya pasó"}
+                      </div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:20, color }}>{fmtMoney(recaudado)}</div>
+                      <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>recaudado · {numCompras} compra{numCompras!==1?"s":""}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ height:8, background:"#0D0F12", borderRadius:99, overflow:"hidden", marginBottom:8 }}>
+                    <div style={{ height:"100%", width:`${pct}%`, background:color, transition:"width .4s" }} />
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#9AA1AC", marginBottom:16 }}>
+                    <span>{vendidos} de {r.totalBoletos} boletos vendidos ({pct}%)</span>
+                    <span>{disponibles} disponibles</span>
+                  </div>
+
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10 }}>
+                    <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                      <div style={{ fontSize:14, fontWeight:800 }}>{fmtMoney(r.precio)}</div>
+                      <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>por boleto</div>
+                    </div>
+                    <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                      <div style={{ fontSize:14, fontWeight:800 }}>{fmtMoney(proyeccion)}</div>
+                      <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>si se vende todo</div>
+                    </div>
+                    <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                      <div style={{ fontSize:14, fontWeight:800 }}>{(r.combos||[]).length}</div>
+                      <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>combos activos</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ---- TAB: COMPRAS ---- */}
       {tabAdmin==="compras" && (
