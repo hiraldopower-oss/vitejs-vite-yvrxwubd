@@ -1211,14 +1211,20 @@ export default function App() {
         .nb.on{color:#0D0F12;background:#C6FF3D;}
         @media(max-width:768px){
           .nb{font-size:12px;padding:8px 10px;}
-          .catalog-section{padding:32px 20px !important;}
-          .hero-section{padding:60px 20px 48px !important;}
-          .header-inner{padding:12px 20px !important;}
+          .catalog-section{padding:32px 16px !important;}
+          .hero-section{padding:56px 16px 40px !important;}
+          .header-inner{padding:12px 16px !important;}
+          .how-section{padding:40px 16px !important;}
           .admin-layout{flex-direction:column !important;}
           .admin-sidebar{flex-direction:row !important;flex-wrap:wrap;border-right:none !important;border-bottom:1px solid #232830;padding:12px 16px !important;gap:6px !important;width:auto !important;min-width:unset !important;}
           .admin-sidebar button{padding:8px 12px !important;font-size:11px !important;}
           .admin-content{padding:20px 16px !important;}
           .admin-main{padding:24px 16px !important;}
+        }
+        @media(max-width:480px){
+          .header-inner{gap:10px !important;justify-content:center !important;}
+          .header-inner > button{font-size:12px !important;}
+          .header-inner > nav{width:100%;justify-content:center;}
         }
       `}</style>
 
@@ -1230,7 +1236,7 @@ export default function App() {
 
       {/* HEADER */}
       <header style={{ position:"sticky", top:0, zIndex:40, background:"rgba(13,15,18,0.92)", backdropFilter:"blur(8px)", borderBottom:"1px solid #232830" }}>
-        <div style={{ maxWidth:1600, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 60px", flexWrap:"wrap", gap:8 }}>
+        <div className="header-inner" style={{ maxWidth:1600, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 60px", flexWrap:"wrap", gap:8 }}>
           <button onClick={()=>setView("catalogo")} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:14, letterSpacing:"0.5px", cursor:"pointer" }}>
             {siteConfig.logoUrl
               ? <img src={siteConfig.logoUrl} alt="" style={{ height:34, width:"auto" }} />
@@ -1288,7 +1294,7 @@ export default function App() {
           </section>
 
           {/* ── CÓMO FUNCIONA ── */}
-          <section style={{ borderBottom:"1px solid #232830", padding:"64px 60px", background:"#0D0F12" }}>
+          <section className="how-section" style={{ borderBottom:"1px solid #232830", padding:"64px 60px", background:"#0D0F12" }}>
             <div style={{ maxWidth:1000, margin:"0 auto" }}>
               <div style={{ textAlign:"center", marginBottom:48 }}>
                 <div style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, fontWeight:800, letterSpacing:"1.5px", color:"#C6FF3D", background:"rgba(198,255,61,0.08)", border:"1px solid rgba(198,255,61,0.2)", padding:"7px 16px", borderRadius:999, marginBottom:16 }}>
