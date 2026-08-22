@@ -1318,7 +1318,9 @@ export default function App() {
       {view==="rifa" && rifaActiva && (
         <RifaDetalle rifa={rifas.find(r=>r.id===rifaActiva.id)||rifaActiva}
           agregarPendiente={agregarPendiente} showToast={showToast}
-          onVolver={()=>setView("catalogo")} vendidosCount={vendidosPorRifa(rifaActiva.id)} metodosPago={metodosPago} />
+          onVolver={()=>setView("catalogo")} vendidosCount={vendidosPorRifa(rifaActiva.id)}
+          reservadoPendiente={pendientes.filter(p=>p.rifaId===rifaActiva.id && p.estado==="pendiente").reduce((s,p)=>s+(p.cantidad||0),0)}
+          metodosPago={metodosPago} />
       )}
 
       {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} rifas={rifas} />}
@@ -1364,9 +1366,14 @@ export default function App() {
 }
 
 /* ---- Vista detalle / compra ---- */
-function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCount, metodosPago }) {
+function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCount, reservadoPendiente, metodosPago }) {
   const minBol = Math.max(1, rifa.minBoletos || 1);
-  const disponibles = Math.max(0, rifa.totalBoletos - vendidosCount);
+  // Los boletos disponibles descuentan tanto los ya vendidos (aprobados) como
+  // los que ya están reservados por compras pendientes de aprobar. Así no se
+  // puede comprar más de lo que la rifa realmente tiene, aunque haya varias
+  // compras esperando validación al mismo tiempo (eso evitaría tener que
+  // devolver dinero por sobreventa).
+  const disponibles = Math.max(0, rifa.totalBoletos - vendidosCount - (reservadoPendiente||0));
   const maxBol = Math.max(minBol, disponibles);
   const combosDisponibles = (rifa.combos||[]).filter(c => c.cantidad<=disponibles).sort((a,b)=>a.cantidad-b.cantidad);
   const [comboSel, setComboSel] = useState(null);
