@@ -1072,6 +1072,12 @@ export default function App() {
   const [siteConfig, setSiteConfig] = useState(SITE_CONFIG_INICIAL);
   const [toast, setToast] = useState(null);
 
+  // Actualiza el título de la pestaña del navegador (en vez del nombre del
+  // dominio) según el nombre de marca configurado en "Editar página".
+  useEffect(() => {
+    document.title = siteConfig.marca || "HIRALDO POWER";
+  }, [siteConfig.marca]);
+
   useEffect(() => {
     (async () => {
       const load = async (key, def) => { return await dbGet(key, def); };
