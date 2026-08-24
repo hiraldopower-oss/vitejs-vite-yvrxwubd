@@ -103,10 +103,6 @@ const RIFAS_INICIALES = [
   },
 ];
 
-// Logo incrustado directamente (no depende de Firebase) para que se vea
-// desde el primer instante en la pantalla de carga, antes de conectar.
-const LOGO_CARGA_B64 = "data:image/png;base64,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";
-
 const SITE_CONFIG_INICIAL = {
   marca: "HIRALDO POWER",
   logoUrl: "",
@@ -120,6 +116,12 @@ const SITE_CONFIG_INICIAL = {
 };
 
 const ADMIN_PIN = "1818";
+
+// ---- Números Power: boletos "premiados" que dan RD$1,000 al instante ----
+// (Se asignan al azar como cualquier otro boleto; esta lista solo se usa
+// para detectar en el admin cuando alguno de estos números fue vendido.)
+const POWER_NUMBERS_INICIAL = ["7346", "2891", "6072", "4519", "3785"];
+const PREMIO_POWER_MONTO = 1000;
 
 const CATEGORIAS = ["motos", "autos", "efectivo", "tech", "otro"];
 
@@ -1074,6 +1076,8 @@ export default function App() {
   const [rifas, setRifas] = useState(RIFAS_INICIALES);
   const [metodosPago, setMetodosPago] = useState(METODOS_PAGO_INICIALES);
   const [siteConfig, setSiteConfig] = useState(SITE_CONFIG_INICIAL);
+  const [powerNumbers, setPowerNumbers] = useState(POWER_NUMBERS_INICIAL);
+  const [premiosPower, setPremiosPower] = useState([]);
   const [toast, setToast] = useState(null);
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
 
@@ -1093,13 +1097,16 @@ export default function App() {
       const h = await load("historial", []);
       const mp = await load("metodosPago", METODOS_PAGO_INICIALES);
       const sc = await load("siteConfig", SITE_CONFIG_INICIAL);
+      const pn = await load("powerNumbers", POWER_NUMBERS_INICIAL);
+      const pp = await load("premiosPower", []);
       setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp); setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
+      setPowerNumbers(pn); setPremiosPower(pp);
       setReady(true);
     })();
   }, []);
 
   const save = async (key, val, setter) => { setter(val); const ok = await dbSet(key, val); return ok; };
-  const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),3200); };
+  const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null), kind==="power"?6500:3200); };
 
   // Guarda solo las rifas cuyo pool de boletos cambió (cada una en su propio
   // documento de Firebase), y elimina el documento de las rifas que ya no existen.
@@ -1163,11 +1170,15 @@ export default function App() {
       const b = await cargarTodosLosBoletos(r);
       const h = await dbGet("historial", []);
       const sc = await dbGet("siteConfig", SITE_CONFIG_INICIAL);
+      const pn = await dbGet("powerNumbers", POWER_NUMBERS_INICIAL);
+      const pp = await dbGet("premiosPower", []);
       setPendientes(p);
       setBoletos(b);
       setHistorial(h);
       setRifas(r);
       setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
+      setPowerNumbers(pn);
+      setPremiosPower(pp);
     } catch {}
   };
 
@@ -1196,8 +1207,8 @@ export default function App() {
 
   if (!ready) return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#C6FF3D", gap:12, fontFamily:"'Arial Black',sans-serif", letterSpacing:1 }}>
-      <img src={LOGO_CARGA_B64} alt="" style={{ width:56, height:56, animation:"pulse 1.2s ease-in-out infinite" }} />
-      CARGANDO EMOCIONES…
+      <Zap size={40} style={{ animation:"pulse 1.2s ease-in-out infinite" }} />
+      CARGANDO SISTEMA…
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
     </div>
   );
@@ -1209,6 +1220,7 @@ export default function App() {
         html,body,#root{width:100%;min-height:100vh;background:#0D0F12;}
         body{margin:0;padding:0;background:#0D0F12;}
         @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+        @keyframes pulse{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.35)}50%{box-shadow:0 8px 34px rgba(245,158,11,0.7)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes fadein{from{opacity:0}to{opacity:1}}
         @keyframes slidein-drawer{from{transform:translateX(100%)}to{transform:translateX(0)}}
@@ -1245,7 +1257,7 @@ export default function App() {
       `}</style>
 
       {toast && (
-        <div style={{ position:"fixed", top:18, right:18, zIndex:300, background:"#14171C", border:`1px solid ${toast.kind==="warn"?"#FF6B35":"#C6FF3D"}`, color:"#F2F2EF", padding:"12px 18px", borderRadius:10, fontSize:13, maxWidth:320, animation:"slidein .25s ease", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+        <div style={{ position:"fixed", top:18, right:18, zIndex:300, background:"#14171C", border:`1px solid ${toast.kind==="warn"?"#FF6B35":toast.kind==="power"?"#f59e0b":"#C6FF3D"}`, color:"#F2F2EF", padding:"12px 18px", borderRadius:10, fontSize:13, maxWidth:320, fontWeight: toast.kind==="power"?700:400, animation: toast.kind==="power" ? "slidein .25s ease, pulse 1s ease 2" : "slidein .25s ease", boxShadow: toast.kind==="power" ? "0 8px 24px rgba(245,158,11,0.35)" : "0 8px 24px rgba(0,0,0,0.4)" }}>
           {toast.msg}
         </div>
       )}
@@ -1355,7 +1367,7 @@ export default function App() {
                   { num:"01", icon:"🎟️", titulo:"Elige tu rifa", desc:"Selecciona el premio que quieres ganar y la cantidad de boletos que deseas." },
                   { num:"02", icon:"💳", titulo:"Realiza tu pago", desc:"Transfiere por banco o paga en efectivo. Sube tu captura de comprobante." },
                   { num:"03", icon:"✅", titulo:"Recibe tu número", desc:"Validamos tu pago en máximo 24 horas y te asignamos números al azar por WhatsApp." },
-                  { num:"04", icon:"🎲", titulo:"¡Espera el sorteo!", desc:"El sorteo se hace con la Lotería Anunciada (100% público y verificable). Anunciamos al ganador en vivo por Instagram y aquí en la página." },
+                  { num:"04", icon:"🎲", titulo:"¡Espera el sorteo!", desc:"El sorteo se hace en vivo y en público. El ganador se anuncia aquí mismo." },
                 ].map(({ num, icon, titulo, desc }) => (
                   <div key={num} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:"28px 22px", position:"relative", overflow:"hidden" }}>
                     <div style={{ position:"absolute", top:16, right:16, fontFamily:"'Arial Black',sans-serif", fontSize:36, color:"rgba(198,255,61,0.06)", lineHeight:1 }}>{num}</div>
@@ -1396,6 +1408,8 @@ export default function App() {
           vendidosPorRifa={vendidosPorRifa} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
           metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)}
           siteConfig={siteConfig} saveSiteConfig={sc=>save("siteConfig",sc,setSiteConfig)}
+          powerNumbers={powerNumbers} savePowerNumbers={pn=>save("powerNumbers",pn,setPowerNumbers)}
+          premiosPower={premiosPower} savePremiosPower={pp=>save("premiosPower",pp,setPremiosPower)} setPremiosPowerLocal={setPremiosPower}
           onRefresh={refreshFromFirebase} />
       )}
 
@@ -2107,7 +2121,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, onRefresh }) {
+function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, onRefresh }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [numSorteo, setNumSorteo] = useState("");
@@ -2170,6 +2184,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
   );
   const pendientesActivos = pendientes.filter(p=>p.estado==="pendiente");
   const pendientesAprobados = pendientes.filter(p=>p.estado==="aprobado");
+  const premiosPowerPendientes = (premiosPower||[]).filter(x=>!x.pagado);
 
   const rifasActivas = rifas.filter(r=>r.activa).slice().sort((a,b)=>new Date(a.fechaSorteo)-new Date(b.fechaSorteo));
   const statsPorRifa = rifasActivas.map(r=>{
@@ -2230,6 +2245,38 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     setBoletosLocal(b => ({ ...b, [p.rifaId]: nextPoolFinal }));
     setPendientesLocal(nextPendFinal);
     showToast(`${asignados.length} boletos asignados a ${p.nombre}: ${asignados.join(", ")}`, "ok");
+
+    // ¿Alguno de los boletos asignados es un Número Power?
+    const ganadoresPower = asignados.filter(num => (powerNumbers || []).includes(num));
+    if (ganadoresPower.length > 0) {
+      const premioRef = doc(db, "hiraldopower", "premiosPower");
+      let nextPremiosFinal = null;
+      try {
+        await runTransaction(db, async (tx) => {
+          const snap = await tx.get(premioRef);
+          const actual = snap.exists() ? (snap.data().value || []) : [];
+          const nuevos = ganadoresPower.map(num => ({
+            id: "PW" + Date.now() + "-" + num,
+            numero: num,
+            nombre: p.nombre,
+            telefono: p.telefono,
+            rifaId: p.rifaId,
+            rifaTitulo: tituloRifa(p.rifaId),
+            fecha: new Date().toISOString(),
+            pagado: false,
+          }));
+          nextPremiosFinal = [...nuevos, ...actual];
+          tx.set(premioRef, { value: nextPremiosFinal });
+        });
+        setPremiosPowerLocal(nextPremiosFinal);
+        ganadoresPower.forEach(num => {
+          showToast(`⚡ ¡NÚMERO POWER! Boleto #${num} de ${p.nombre} gana RD$${PREMIO_POWER_MONTO.toLocaleString("es-DO")} al instante`, "power");
+        });
+      } catch (e) {
+        console.error("registrar premio power error:", e);
+        showToast("¡Salió un Número Power, pero hubo un error al registrarlo! Anótalo a mano.", "warn");
+      }
+    }
   };
 
   const rechazar = async (p) => {
@@ -2249,6 +2296,23 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     }
     setPendientesLocal(nextPendFinal);
     showToast("Compra rechazada","warn");
+  };
+
+  const marcarPremioPagado = async (id) => {
+    const nuevos = (premiosPower||[]).map(x => x.id===id ? {...x, pagado: !x.pagado} : x);
+    const ok = await savePremiosPower(nuevos);
+    if (ok===false) showToast("Error al actualizar. Intenta de nuevo.", "warn");
+  };
+
+  const [editandoPowerNumbers, setEditandoPowerNumbers] = useState(false);
+  const [formPowerNumbers, setFormPowerNumbers] = useState(powerNumbers);
+  useEffect(() => { setFormPowerNumbers(powerNumbers); }, [powerNumbers]);
+  const guardarPowerNumbers = async () => {
+    const limpios = formPowerNumbers.map(n => (n||"").trim()).filter(Boolean);
+    if (limpios.length === 0) { showToast("Debes dejar al menos un número.", "warn"); return; }
+    const ok = await savePowerNumbers(limpios);
+    if (ok===false) showToast("Error al guardar. Intenta de nuevo.", "warn");
+    else { showToast("Números Power actualizados ✓", "ok"); setEditandoPowerNumbers(false); }
   };
 
   const liberarBoleto = async (rifaId, num) => {
@@ -2408,6 +2472,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             ["pagos", "💳 Métodos de pago", null, null],
             ["boletos", "📋 Boletos vendidos", vendidosTodos.length || null, null],
             ["ganadores", "🏆 Ganadores", historial.length || null, null],
+            ["power", "⚡ Números Power", premiosPowerPendientes.length || null, premiosPowerPendientes.length > 0 ? "#f59e0b" : null],
             ["sorteo", "🎲 Sorteo en vivo", null, null],
             ["pagina", "✏️ Editar página", null, null],
           ].map(([id, label, badge, badgeColor]) => (
@@ -2695,6 +2760,83 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
         </div>
       )}
 
+      {/* ---- TAB: NÚMEROS POWER ---- */}
+      {tabAdmin==="power" && (
+        <div>
+          <div style={{ display:"flex", gap:12, background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:12, padding:16, fontSize:13, color:"#f59e0b", marginBottom:20 }}>
+            <Sparkles size={18} style={{ flexShrink:0 }}/>
+            <div>
+              Cuando un cliente compre un boleto y el sistema le asigne al azar uno de tus Números Power, aparecerá una notificación aquí y en la parte superior de la pantalla. Cada uno paga RD${PREMIO_POWER_MONTO.toLocaleString("es-DO")} instantáneo. Estos números no se muestran en ninguna parte pública de la página.
+            </div>
+          </div>
+
+          {/* Editor de los 5 números */}
+          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:22, marginBottom:24, maxWidth:640 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: editandoPowerNumbers ? 16 : 0 }}>
+              <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, display:"flex", alignItems:"center", gap:8 }}>
+                <Zap size={17} style={{ color:"#f59e0b" }}/> Tus 5 Números Power
+              </h3>
+              {!editandoPowerNumbers && (
+                <button onClick={()=>setEditandoPowerNumbers(true)} style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #333", color:"#F2F2EF", fontWeight:700, fontSize:12, padding:"8px 14px", borderRadius:8, cursor:"pointer" }}>
+                  <Pencil size={13}/> Editar
+                </button>
+              )}
+            </div>
+
+            {!editandoPowerNumbers ? (
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                {(powerNumbers||[]).map((n,i)=>(
+                  <span key={i} style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, background:"#0D0F12", border:"1px solid #f59e0b", color:"#f59e0b", padding:"8px 16px", borderRadius:8 }}>#{n}</span>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:16 }}>
+                  {formPowerNumbers.map((n,i)=>(
+                    <input key={i} value={n} maxLength={4}
+                      onChange={e=>{
+                        const v = e.target.value.replace(/\D/g,"");
+                        setFormPowerNumbers(fp => fp.map((x,idx)=>idx===i?v:x));
+                      }}
+                      style={{ width:70, textAlign:"center", background:"#0D0F12", border:"1px solid #333", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:16, padding:"10px 0", borderRadius:8 }}
+                    />
+                  ))}
+                  <button onClick={()=>setFormPowerNumbers(fp=>[...fp,""])} style={{ background:"#232830", border:"1px dashed #444", color:"#9AA1AC", borderRadius:8, width:44, cursor:"pointer" }}>+</button>
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <button onClick={guardarPowerNumbers} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Guardar</button>
+                  <button onClick={()=>{ setFormPowerNumbers(powerNumbers); setEditandoPowerNumbers(false); }} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Ganadores de Números Power */}
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:14 }}>Ganadores de Números Power</h3>
+          {(premiosPower||[]).length===0 && (
+            <div style={{ display:"flex", gap:12, background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:16, fontSize:13, color:"#9AA1AC" }}>
+              <AlertCircle size={18} style={{ flexShrink:0 }}/> Todavía no ha salido ningún Número Power.
+            </div>
+          )}
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {(premiosPower||[]).map(pw=>(
+              <div key={pw.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:14, background:"#14171C", border:`1px solid ${pw.pagado?"#232830":"#f59e0b"}`, borderRadius:12, padding:"14px 18px", flexWrap:"wrap" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+                  <span style={{ fontFamily:"'Arial Black',sans-serif", fontSize:16, color:"#f59e0b" }}>#{pw.numero}</span>
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:13 }}>{pw.nombre} <span style={{ color:"#9AA1AC", fontWeight:400 }}>· {pw.telefono}</span></div>
+                    <div style={{ fontSize:11, color:"#9AA1AC", marginTop:2 }}>{pw.rifaTitulo} · {new Date(pw.fecha).toLocaleString("es-DO")}</div>
+                  </div>
+                </div>
+                <button onClick={()=>marcarPremioPagado(pw.id)} style={{ display:"flex", alignItems:"center", gap:6, background: pw.pagado?"#232830":"#C6FF3D", color: pw.pagado?"#9AA1AC":"#0D0F12", border:"none", fontWeight:800, fontSize:12, padding:"9px 14px", borderRadius:8, cursor:"pointer" }}>
+                  {pw.pagado ? <>✓ Pagado</> : <>Marcar como pagado</>}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ---- TAB: SORTEO ---- */}
       {tabAdmin==="sorteo" && (
         <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:28, maxWidth:700 }}>
@@ -2729,7 +2871,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                   style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
               </label>
               <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-                <input placeholder="Número de la lotería, ej: 0047" value={numSorteo} disabled={!rifaSorteo}
+                <input placeholder="Número de la tómbola, ej: 047" value={numSorteo} disabled={!rifaSorteo}
                   onChange={e=>{setNumSorteo(e.target.value);setConfirmando(false);}}
                   onKeyDown={e=>e.key==="Enter"&&candidato&&!candidato.noEncontrado&&setConfirmando(true)}
                   style={{ flex:1, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"12px 14px", borderRadius:10, fontSize:14, outline:"none" }} />
@@ -2755,7 +2897,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             </>
           )}
           <div style={{ display:"flex", alignItems:"center", gap:10, background:"rgba(255,107,53,0.08)", border:"1px solid rgba(255,107,53,0.25)", color:"#FF6B35", padding:"14px 16px", borderRadius:10, fontSize:13, marginTop:24 }}>
-            <Trophy size={16}/> Solo entran al sorteo los boletos vendidos y aprobados de la rifa seleccionada.
+            <Trophy size={16}/> Solo entran a la tómbola los boletos vendidos y aprobados de la rifa seleccionada.
           </div>
         </div>
       )}
