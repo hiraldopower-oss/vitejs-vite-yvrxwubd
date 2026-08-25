@@ -118,6 +118,12 @@ const SITE_CONFIG_INICIAL = {
 };
 
 
+// ---- Números Power: boletos "premiados" que dan RD$1,000 al instante ----
+// (Se asignan al azar como cualquier otro boleto; esta lista solo se usa
+// para detectar en el admin cuando alguno de estos números fue vendido.)
+const POWER_NUMBERS_INICIAL = ["7346", "2891", "6072", "4519", "3785"];
+const PREMIO_POWER_MONTO = 1000;
+
 const CATEGORIAS = ["motos", "autos", "efectivo", "tech", "otro"];
 
 const COLORES_RIFA = ["#C6FF3D", "#818cf8", "#FF6B35", "#ec4899", "#22d3ee", "#f59e0b", "#a78bfa", "#34d399"];
@@ -1071,6 +1077,8 @@ export default function App() {
   const [rifas, setRifas] = useState(RIFAS_INICIALES);
   const [metodosPago, setMetodosPago] = useState(METODOS_PAGO_INICIALES);
   const [siteConfig, setSiteConfig] = useState(SITE_CONFIG_INICIAL);
+  const [powerNumbers, setPowerNumbers] = useState(POWER_NUMBERS_INICIAL);
+  const [premiosPower, setPremiosPower] = useState([]);
   const [toast, setToast] = useState(null);
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
 
@@ -1090,13 +1098,16 @@ export default function App() {
       const h = await load("historial", []);
       const mp = await load("metodosPago", METODOS_PAGO_INICIALES);
       const sc = await load("siteConfig", SITE_CONFIG_INICIAL);
+      const pn = await load("powerNumbers", POWER_NUMBERS_INICIAL);
+      const pp = await load("premiosPower", []);
       setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp); setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
+      setPowerNumbers(pn); setPremiosPower(pp);
       setReady(true);
     })();
   }, []);
 
   const save = async (key, val, setter) => { setter(val); const ok = await dbSet(key, val); return ok; };
-  const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null),3200); };
+  const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null), kind==="power"?6500:3200); };
 
   // Guarda solo las rifas cuyo pool de boletos cambió (cada una en su propio
   // documento de Firebase), y elimina el documento de las rifas que ya no existen.
@@ -1160,11 +1171,15 @@ export default function App() {
       const b = await cargarTodosLosBoletos(r);
       const h = await dbGet("historial", []);
       const sc = await dbGet("siteConfig", SITE_CONFIG_INICIAL);
+      const pn = await dbGet("powerNumbers", POWER_NUMBERS_INICIAL);
+      const pp = await dbGet("premiosPower", []);
       setPendientes(p);
       setBoletos(b);
       setHistorial(h);
       setRifas(r);
       setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
+      setPowerNumbers(pn);
+      setPremiosPower(pp);
     } catch {}
   };
 
@@ -1206,6 +1221,7 @@ export default function App() {
         html,body,#root{width:100%;min-height:100vh;background:#0D0F12;}
         body{margin:0;padding:0;background:#0D0F12;}
         @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+        @keyframes pulse{0%,100%{box-shadow:0 8px 24px rgba(245,158,11,0.35)}50%{box-shadow:0 8px 34px rgba(245,158,11,0.7)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes fadein{from{opacity:0}to{opacity:1}}
         @keyframes slidein-drawer{from{transform:translateX(100%)}to{transform:translateX(0)}}
@@ -1242,7 +1258,7 @@ export default function App() {
       `}</style>
 
       {toast && (
-        <div style={{ position:"fixed", top:18, right:18, zIndex:300, background:"#14171C", border:`1px solid ${toast.kind==="warn"?"#FF6B35":"#C6FF3D"}`, color:"#F2F2EF", padding:"12px 18px", borderRadius:10, fontSize:13, maxWidth:320, animation:"slidein .25s ease", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+        <div style={{ position:"fixed", top:18, right:18, zIndex:300, background:"#14171C", border:`1px solid ${toast.kind==="warn"?"#FF6B35":toast.kind==="power"?"#f59e0b":"#C6FF3D"}`, color:"#F2F2EF", padding:"12px 18px", borderRadius:10, fontSize:13, maxWidth:320, fontWeight: toast.kind==="power"?700:400, animation: toast.kind==="power" ? "slidein .25s ease, pulse 1s ease 2" : "slidein .25s ease", boxShadow: toast.kind==="power" ? "0 8px 24px rgba(245,158,11,0.35)" : "0 8px 24px rgba(0,0,0,0.4)" }}>
           {toast.msg}
         </div>
       )}
@@ -1393,6 +1409,8 @@ export default function App() {
           vendidosPorRifa={vendidosPorRifa} rifas={rifas} saveRifas={r=>save("rifas",r,setRifas)}
           metodosPago={metodosPago} saveMetodosPago={mp=>save("metodosPago",mp,setMetodosPago)}
           siteConfig={siteConfig} saveSiteConfig={sc=>save("siteConfig",sc,setSiteConfig)}
+          powerNumbers={powerNumbers} savePowerNumbers={pn=>save("powerNumbers",pn,setPowerNumbers)}
+          premiosPower={premiosPower} savePremiosPower={pp=>save("premiosPower",pp,setPremiosPower)} setPremiosPowerLocal={setPremiosPower}
           onRefresh={refreshFromFirebase} />
       )}
 
@@ -2104,7 +2122,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, onRefresh }) {
+function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, onRefresh }) {
   const [emailLogin, setEmailLogin] = useState("");
   const [passLogin, setPassLogin] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -2125,7 +2143,6 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     setEntrando(true);
     try {
       await signInWithEmailAndPassword(auth, emailLogin.trim(), passLogin);
-      // onAuthStateChanged se encarga de poner unlocked=true
     } catch (e) {
       setLoginError("Correo o contraseña incorrectos");
     } finally {
@@ -2198,6 +2215,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
   );
   const pendientesActivos = pendientes.filter(p=>p.estado==="pendiente");
   const pendientesAprobados = pendientes.filter(p=>p.estado==="aprobado");
+  const premiosPowerPendientes = (premiosPower||[]).filter(x=>!x.pagado);
 
   const rifasActivas = rifas.filter(r=>r.activa).slice().sort((a,b)=>new Date(a.fechaSorteo)-new Date(b.fechaSorteo));
   const statsPorRifa = rifasActivas.map(r=>{
@@ -2258,6 +2276,38 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     setBoletosLocal(b => ({ ...b, [p.rifaId]: nextPoolFinal }));
     setPendientesLocal(nextPendFinal);
     showToast(`${asignados.length} boletos asignados a ${p.nombre}: ${asignados.join(", ")}`, "ok");
+
+    // ¿Alguno de los boletos asignados es un Número Power?
+    const ganadoresPower = asignados.filter(num => (powerNumbers || []).includes(num));
+    if (ganadoresPower.length > 0) {
+      const premioRef = doc(db, "hiraldopower", "premiosPower");
+      let nextPremiosFinal = null;
+      try {
+        await runTransaction(db, async (tx) => {
+          const snap = await tx.get(premioRef);
+          const actual = snap.exists() ? (snap.data().value || []) : [];
+          const nuevos = ganadoresPower.map(num => ({
+            id: "PW" + Date.now() + "-" + num,
+            numero: num,
+            nombre: p.nombre,
+            telefono: p.telefono,
+            rifaId: p.rifaId,
+            rifaTitulo: tituloRifa(p.rifaId),
+            fecha: new Date().toISOString(),
+            pagado: false,
+          }));
+          nextPremiosFinal = [...nuevos, ...actual];
+          tx.set(premioRef, { value: nextPremiosFinal });
+        });
+        setPremiosPowerLocal(nextPremiosFinal);
+        ganadoresPower.forEach(num => {
+          showToast(`⚡ ¡NÚMERO POWER! Boleto #${num} de ${p.nombre} gana RD$${PREMIO_POWER_MONTO.toLocaleString("es-DO")} al instante`, "power");
+        });
+      } catch (e) {
+        console.error("registrar premio power error:", e);
+        showToast("¡Salió un Número Power, pero hubo un error al registrarlo! Anótalo a mano.", "warn");
+      }
+    }
   };
 
   const rechazar = async (p) => {
@@ -2277,6 +2327,23 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     }
     setPendientesLocal(nextPendFinal);
     showToast("Compra rechazada","warn");
+  };
+
+  const marcarPremioPagado = async (id) => {
+    const nuevos = (premiosPower||[]).map(x => x.id===id ? {...x, pagado: !x.pagado} : x);
+    const ok = await savePremiosPower(nuevos);
+    if (ok===false) showToast("Error al actualizar. Intenta de nuevo.", "warn");
+  };
+
+  const [editandoPowerNumbers, setEditandoPowerNumbers] = useState(false);
+  const [formPowerNumbers, setFormPowerNumbers] = useState(powerNumbers);
+  useEffect(() => { setFormPowerNumbers(powerNumbers); }, [powerNumbers]);
+  const guardarPowerNumbers = async () => {
+    const limpios = formPowerNumbers.map(n => (n||"").trim()).filter(Boolean);
+    if (limpios.length === 0) { showToast("Debes dejar al menos un número.", "warn"); return; }
+    const ok = await savePowerNumbers(limpios);
+    if (ok===false) showToast("Error al guardar. Intenta de nuevo.", "warn");
+    else { showToast("Números Power actualizados ✓", "ok"); setEditandoPowerNumbers(false); }
   };
 
   const liberarBoleto = async (rifaId, num) => {
@@ -2450,6 +2517,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             ["pagos", "💳 Métodos de pago", null, null],
             ["boletos", "📋 Boletos vendidos", vendidosTodos.length || null, null],
             ["ganadores", "🏆 Ganadores", historial.length || null, null],
+            ["power", "⚡ Números Power", premiosPowerPendientes.length || null, premiosPowerPendientes.length > 0 ? "#f59e0b" : null],
             ["sorteo", "🎲 Sorteo en vivo", null, null],
             ["pagina", "✏️ Editar página", null, null],
           ].map(([id, label, badge, badgeColor]) => (
@@ -2732,6 +2800,83 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                 onEditar={()=>setEditandoGanador(h)}
                 onEliminar={async()=>{ await saveHistorial(historial.filter(x=>x.id!==h.id)); showToast("Ganador eliminado","warn"); }}
               />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---- TAB: NÚMEROS POWER ---- */}
+      {tabAdmin==="power" && (
+        <div>
+          <div style={{ display:"flex", gap:12, background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:12, padding:16, fontSize:13, color:"#f59e0b", marginBottom:20 }}>
+            <Sparkles size={18} style={{ flexShrink:0 }}/>
+            <div>
+              Cuando un cliente compre un boleto y el sistema le asigne al azar uno de tus Números Power, aparecerá una notificación aquí y en la parte superior de la pantalla. Cada uno paga RD${PREMIO_POWER_MONTO.toLocaleString("es-DO")} instantáneo. Estos números no se muestran en ninguna parte pública de la página.
+            </div>
+          </div>
+
+          {/* Editor de los 5 números */}
+          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:22, marginBottom:24, maxWidth:640 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: editandoPowerNumbers ? 16 : 0 }}>
+              <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, display:"flex", alignItems:"center", gap:8 }}>
+                <Zap size={17} style={{ color:"#f59e0b" }}/> Tus 5 Números Power
+              </h3>
+              {!editandoPowerNumbers && (
+                <button onClick={()=>setEditandoPowerNumbers(true)} style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #333", color:"#F2F2EF", fontWeight:700, fontSize:12, padding:"8px 14px", borderRadius:8, cursor:"pointer" }}>
+                  <Pencil size={13}/> Editar
+                </button>
+              )}
+            </div>
+
+            {!editandoPowerNumbers ? (
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                {(powerNumbers||[]).map((n,i)=>(
+                  <span key={i} style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, background:"#0D0F12", border:"1px solid #f59e0b", color:"#f59e0b", padding:"8px 16px", borderRadius:8 }}>#{n}</span>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:16 }}>
+                  {formPowerNumbers.map((n,i)=>(
+                    <input key={i} value={n} maxLength={4}
+                      onChange={e=>{
+                        const v = e.target.value.replace(/\D/g,"");
+                        setFormPowerNumbers(fp => fp.map((x,idx)=>idx===i?v:x));
+                      }}
+                      style={{ width:70, textAlign:"center", background:"#0D0F12", border:"1px solid #333", color:"#F2F2EF", fontFamily:"'Arial Black',sans-serif", fontSize:16, padding:"10px 0", borderRadius:8 }}
+                    />
+                  ))}
+                  <button onClick={()=>setFormPowerNumbers(fp=>[...fp,""])} style={{ background:"#232830", border:"1px dashed #444", color:"#9AA1AC", borderRadius:8, width:44, cursor:"pointer" }}>+</button>
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <button onClick={guardarPowerNumbers} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Guardar</button>
+                  <button onClick={()=>{ setFormPowerNumbers(powerNumbers); setEditandoPowerNumbers(false); }} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Ganadores de Números Power */}
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:14 }}>Ganadores de Números Power</h3>
+          {(premiosPower||[]).length===0 && (
+            <div style={{ display:"flex", gap:12, background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:16, fontSize:13, color:"#9AA1AC" }}>
+              <AlertCircle size={18} style={{ flexShrink:0 }}/> Todavía no ha salido ningún Número Power.
+            </div>
+          )}
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {(premiosPower||[]).map(pw=>(
+              <div key={pw.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:14, background:"#14171C", border:`1px solid ${pw.pagado?"#232830":"#f59e0b"}`, borderRadius:12, padding:"14px 18px", flexWrap:"wrap" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+                  <span style={{ fontFamily:"'Arial Black',sans-serif", fontSize:16, color:"#f59e0b" }}>#{pw.numero}</span>
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:13 }}>{pw.nombre} <span style={{ color:"#9AA1AC", fontWeight:400 }}>· {pw.telefono}</span></div>
+                    <div style={{ fontSize:11, color:"#9AA1AC", marginTop:2 }}>{pw.rifaTitulo} · {new Date(pw.fecha).toLocaleString("es-DO")}</div>
+                  </div>
+                </div>
+                <button onClick={()=>marcarPremioPagado(pw.id)} style={{ display:"flex", alignItems:"center", gap:6, background: pw.pagado?"#232830":"#C6FF3D", color: pw.pagado?"#9AA1AC":"#0D0F12", border:"none", fontWeight:800, fontSize:12, padding:"9px 14px", borderRadius:8, cursor:"pointer" }}>
+                  {pw.pagado ? <>✓ Pagado</> : <>Marcar como pagado</>}
+                </button>
+              </div>
             ))}
           </div>
         </div>
