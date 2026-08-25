@@ -5,7 +5,7 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, runTransaction } from "fi
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDhR3k-9T_QkJmhZQCrjckPsy0z2vNTlgo",
+  apiKey: "AIzaSyAuLh1JyGuGyKW72W0P17kdVlZbVsDDRxc",
   authDomain: "hiraldo-power.firebaseapp.com",
   projectId: "hiraldo-power",
   storageBucket: "hiraldo-power.firebasestorage.app",
