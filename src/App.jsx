@@ -2335,6 +2335,13 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     if (ok===false) showToast("Error al actualizar. Intenta de nuevo.", "warn");
   };
 
+  const eliminarPremioPower = async (id) => {
+    const nuevos = (premiosPower||[]).filter(x => x.id!==id);
+    const ok = await savePremiosPower(nuevos);
+    if (ok===false) showToast("Error al eliminar. Intenta de nuevo.", "warn");
+    else showToast("Registro eliminado ✓", "ok");
+  };
+
   const [editandoPowerNumbers, setEditandoPowerNumbers] = useState(false);
   const [formPowerNumbers, setFormPowerNumbers] = useState(powerNumbers);
   useEffect(() => { setFormPowerNumbers(powerNumbers); }, [powerNumbers]);
@@ -2873,9 +2880,15 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                     <div style={{ fontSize:11, color:"#9AA1AC", marginTop:2 }}>{pw.rifaTitulo} · {new Date(pw.fecha).toLocaleString("es-DO")}</div>
                   </div>
                 </div>
-                <button onClick={()=>marcarPremioPagado(pw.id)} style={{ display:"flex", alignItems:"center", gap:6, background: pw.pagado?"#232830":"#C6FF3D", color: pw.pagado?"#9AA1AC":"#0D0F12", border:"none", fontWeight:800, fontSize:12, padding:"9px 14px", borderRadius:8, cursor:"pointer" }}>
-                  {pw.pagado ? <>✓ Pagado</> : <>Marcar como pagado</>}
-                </button>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={()=>marcarPremioPagado(pw.id)} style={{ display:"flex", alignItems:"center", gap:6, background: pw.pagado?"#232830":"#C6FF3D", color: pw.pagado?"#9AA1AC":"#0D0F12", border:"none", fontWeight:800, fontSize:12, padding:"9px 14px", borderRadius:8, cursor:"pointer" }}>
+                    {pw.pagado ? <>✓ Pagado</> : <>Marcar como pagado</>}
+                  </button>
+                  <button onClick={()=>{ if(window.confirm(`¿Eliminar el registro del boleto #${pw.numero} (${pw.nombre})?`)) eliminarPremioPower(pw.id); }} title="Eliminar registro"
+                    style={{ display:"flex", alignItems:"center", justifyContent:"center", background:"#232830", border:"1px solid #f87171", color:"#f87171", padding:"9px 11px", borderRadius:8, cursor:"pointer" }}>
+                    <Trash2 size={14}/>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
