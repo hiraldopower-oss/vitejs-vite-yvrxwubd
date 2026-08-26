@@ -170,6 +170,25 @@ const METODOS_PAGO_INICIALES = [
 
 function fmtMoney(n) { return "RD$" + Number(n).toLocaleString("es-DO"); }
 
+// Redimensiona una imagen (dataURL) a un tamaño máximo, conservando
+// transparencia (PNG). Se usa para el logo del sitio y el logo de cada
+// método de pago antes de guardarlo.
+function comprimirImagen(dataUrl, maxPx, cb) {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    let w = img.width, h = img.height;
+    if (w > maxPx || h > maxPx) {
+      if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+      else { w = Math.round(w * maxPx / h); h = maxPx; }
+    }
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+    cb(canvas.toDataURL("image/png"));
+  };
+  img.src = dataUrl;
+}
+
 // Convierte un teléfono como "809-555-1234" al formato que necesita wa.me
 // (solo dígitos, con el código de país 1 si el número no lo trae ya).
 function normalizarTelefono(tel) {
@@ -1807,6 +1826,11 @@ function CheckoutModal({ selected, total, onClose, onConfirm, metodosPago, siteC
                 <div style={{ width:18, height:18, borderRadius:"50%", border:`2px solid ${metodoId===m.id?"#C6FF3D":"#232830"}`, background:metodoId===m.id?"#C6FF3D":"transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
                   {metodoId===m.id && <div style={{ width:8, height:8, borderRadius:"50%", background:"#0D0F12" }} />}
                 </div>
+                {m.logoUrl && (
+                  <div style={{ width:32, height:32, borderRadius:8, background:"#14171C", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0 }}>
+                    <img src={m.logoUrl} alt="" style={{ maxWidth:"100%", maxHeight:"100%" }} />
+                  </div>
+                )}
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, fontWeight:700, color:"#F2F2EF" }}>{m.nombre}</div>
                   {m.tipo==="banco" && m.titular && <div style={{ fontSize:11, color:"#9AA1AC", marginTop:2 }}>{m.titular}</div>}
@@ -2102,10 +2126,26 @@ function EditorMetodoPago({ metodo, onGuardar, onCancelar }) {
     titular: "",
     cuenta: "",
     instrucciones: "",
+    logoUrl: "",
     activo: true,
   });
+  const [subiendoLogoMetodo, setSubiendoLogoMetodo] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const valido = form.nombre.trim().length > 0;
+
+  const cargarLogoMetodo = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSubiendoLogoMetodo(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      comprimirImagen(ev.target.result, 200, (compressed) => {
+        set("logoUrl", compressed);
+        setSubiendoLogoMetodo(false);
+      });
+    };
+    reader.readAsDataURL(file);
+  };
 
   return (
     <div onClick={onCancelar} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:20 }}>
@@ -2138,6 +2178,28 @@ function EditorMetodoPago({ metodo, onGuardar, onCancelar }) {
               placeholder={form.tipo==="banco"?"Ej: Banco Popular · BHD · Banreservas":form.tipo==="efectivo"?"Ej: Efectivo (en persona)":"Ej: Sinpe Móvil · PayPal"}
               style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
           </label>
+
+          {/* Logo del método */}
+          <div style={{ marginBottom:18 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:8 }}>LOGO (opcional)</span>
+            <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+              <div style={{ width:52, height:52, borderRadius:10, background:"#0D0F12", border:"1px solid #232830", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0 }}>
+                {form.logoUrl ? <img src={form.logoUrl} alt="" style={{ maxWidth:"100%", maxHeight:"100%" }} /> : <ImagePlus size={18} style={{ color:"#5a6170" }}/>}
+              </div>
+              <div>
+                <label style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#232830", color:"#F2F2EF", fontSize:12, fontWeight:700, padding:"9px 14px", borderRadius:8, cursor:subiendoLogoMetodo?"not-allowed":"pointer", opacity:subiendoLogoMetodo?0.6:1, width:"fit-content" }}>
+                  <ImagePlus size={14}/> {subiendoLogoMetodo ? "Procesando…" : (form.logoUrl ? "Cambiar logo" : "Subir logo")}
+                  <input type="file" accept="image/*" disabled={subiendoLogoMetodo} onChange={cargarLogoMetodo} style={{ display:"none" }} />
+                </label>
+                {form.logoUrl && (
+                  <button onClick={()=>set("logoUrl","")} style={{ display:"block", background:"none", border:"none", color:"#FF5470", fontSize:12, fontWeight:700, cursor:"pointer", textAlign:"left", padding:"6px 0 0" }}>
+                    Quitar logo
+                  </button>
+                )}
+              </div>
+            </div>
+            <p style={{ fontSize:11, color:"#5a6170", marginTop:8 }}>Sube una imagen del logo de tu banco o del método (una captura o el logo oficial que ya tengas guardado).</p>
+          </div>
 
           {/* Campos de banco */}
           {form.tipo==="banco" && (
@@ -2232,6 +2294,9 @@ function MetodoPagoRow({ m, onEditar, onEliminar }) {
   return (
     <div style={{ background:"#14171C", border:`1px solid ${m.activo?"rgba(198,255,61,0.2)":"#232830"}`, borderRadius:12, overflow:"hidden" }}>
       <div style={{ padding:16, display:"flex", gap:14, alignItems:"center", flexWrap:"wrap" }}>
+        <div style={{ width:40, height:40, borderRadius:9, background:"#0D0F12", border:"1px solid #232830", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0 }}>
+          {m.logoUrl ? <img src={m.logoUrl} alt="" style={{ maxWidth:"100%", maxHeight:"100%" }} /> : <ImagePlus size={15} style={{ color:"#5a6170" }}/>}
+        </div>
         <div style={{ flex:1, minWidth:160 }}>
           <div style={{ fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:8 }}>
             {m.nombre}
