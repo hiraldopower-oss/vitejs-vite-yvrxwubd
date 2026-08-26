@@ -129,6 +129,7 @@ const SITE_CONFIG_INICIAL = {
   instagram: "@kennyhiraldo22",
   facebook: "Kenny Antonio Hiraldo Balbuena",
   mensajeWhatsapp: MENSAJE_WHATSAPP_INICIAL,
+  codigoEfectivo: "0000",
 };
 
 
@@ -1551,7 +1552,7 @@ export default function App() {
           agregarPendiente={agregarPendiente} showToast={showToast}
           onVolver={()=>setView("catalogo")} vendidosCount={vendidosPorRifa(rifaActiva.id)}
           reservadoPendiente={pendientes.filter(p=>p.rifaId===rifaActiva.id && p.estado==="pendiente").reduce((s,p)=>s+(p.cantidad||0),0)}
-          metodosPago={metodosPago} />
+          metodosPago={metodosPago} siteConfig={siteConfig} />
       )}
 
       {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} rifas={rifas} />}
@@ -1611,7 +1612,7 @@ export default function App() {
 }
 
 /* ---- Vista detalle / compra ---- */
-function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCount, reservadoPendiente, metodosPago }) {
+function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCount, reservadoPendiente, metodosPago, siteConfig }) {
   const minBol = Math.max(1, rifa.minBoletos || 1);
   // Los boletos disponibles descuentan tanto los ya vendidos (aprobados) como
   // los que ya están reservados por compras pendientes de aprobar. Así no se
@@ -1723,7 +1724,7 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
       </div>
       )}
       {showCheckout && !cerrada && (
-        <CheckoutModal selected={cantidadFinal} total={total} metodosPago={metodosPago} onClose={()=>setShowCheckout(false)}
+        <CheckoutModal selected={cantidadFinal} total={total} metodosPago={metodosPago} siteConfig={siteConfig} onClose={()=>setShowCheckout(false)}
           onConfirm={async(datos)=>{
             const nuevo={id:"P"+Date.now(),...datos,cantidad:cantidadFinal,total,rifaId:rifa.id,rifaTitulo:rifa.titulo,fecha:new Date().toISOString(),estado:"pendiente"};
             const ok = await agregarPendiente(nuevo);
@@ -1740,7 +1741,7 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
 }
 
 /* ---- Checkout ---- */
-function CheckoutModal({ selected, total, onClose, onConfirm, metodosPago }) {
+function CheckoutModal({ selected, total, onClose, onConfirm, metodosPago, siteConfig }) {
   const metodos = (metodosPago||[]).filter(m=>m.activo);
   const [nombre,setNombre]=useState("");
   const [telefono,setTelefono]=useState("");
@@ -1748,10 +1749,12 @@ function CheckoutModal({ selected, total, onClose, onConfirm, metodosPago }) {
   const [acepta,setAcepta]=useState(false);
   const [copiado,setCopiado]=useState(null);
   const [captura,setCaptura]=useState("");
+  const [codigoEfectivo,setCodigoEfectivo]=useState("");
   const capturaRef = useRef(null);
   const metodoSel = metodos.find(m=>m.id===metodoId);
   const esEfectivo = metodoSel?.tipo==="efectivo";
-  const valido=nombre.trim().length>2&&telefono.trim().length>=10&&acepta&&!!metodoSel&&(esEfectivo||captura);
+  const codigoEfectivoOk = !esEfectivo || codigoEfectivo === (siteConfig?.codigoEfectivo || "0000");
+  const valido=nombre.trim().length>2&&telefono.trim().length>=10&&acepta&&!!metodoSel&&(esEfectivo?codigoEfectivoOk:captura);
   const copiarDatos = (texto, id) => { navigator.clipboard?.writeText(texto); setCopiado(id); setTimeout(()=>setCopiado(null),1800); };
 
   const cargarCaptura = (e) => {
@@ -1826,8 +1829,18 @@ function CheckoutModal({ selected, total, onClose, onConfirm, metodosPago }) {
           </div>
         )}
         {metodoSel && metodoSel.tipo==="efectivo" && (
-          <div style={{ display:"flex", gap:10, background:"rgba(198,255,61,0.05)", border:"1px solid rgba(198,255,61,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:16, fontSize:13, color:"#9AA1AC" }}>
-            <Zap size={16} style={{ color:"#C6FF3D", flexShrink:0, marginTop:1 }}/> El organizador coordinará contigo el pago en persona por WhatsApp.
+          <div style={{ marginBottom:16 }}>
+            <div style={{ display:"flex", gap:10, background:"rgba(198,255,61,0.05)", border:"1px solid rgba(198,255,61,0.2)", borderRadius:10, padding:"12px 14px", marginBottom:12, fontSize:13, color:"#9AA1AC" }}>
+              <Zap size={16} style={{ color:"#C6FF3D", flexShrink:0, marginTop:1 }}/> El organizador coordinará contigo el pago en persona por WhatsApp.
+            </div>
+            <label style={{ display:"block" }}>
+              <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Código de autorización *</span>
+              <input type="password" value={codigoEfectivo} onChange={e=>setCodigoEfectivo(e.target.value)} placeholder="Solo el organizador conoce este código"
+                style={{ width:"100%", background:"#0D0F12", border:`1px solid ${codigoEfectivo && !codigoEfectivoOk ? "#f87171" : "#232830"}`, color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+              {codigoEfectivo && !codigoEfectivoOk && (
+                <p style={{ fontSize:11, color:"#f87171", marginTop:6 }}>Código incorrecto.</p>
+              )}
+            </label>
           </div>
         )}
 
@@ -3373,6 +3386,17 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
               style={{ background:"none", border:"1px solid #232830", color:"#9AA1AC", fontWeight:700, fontSize:12, padding:"9px 14px", borderRadius:8, cursor:"pointer" }}>
               Restaurar mensaje por defecto
             </button>
+          </div>
+
+          <div style={{ borderTop:"1px solid #232830", paddingTop:20, marginBottom:20 }}>
+            <h4 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:4, display:"flex", alignItems:"center", gap:8 }}>
+              <Lock size={14} style={{ color:"#f59e0b" }}/> Código para pagos en efectivo
+            </h4>
+            <p style={{ color:"#9AA1AC", fontSize:12, marginBottom:12, lineHeight:1.5 }}>
+              El cliente debe escribir este código para poder elegir "efectivo" como método de pago. Compártelo solo con quien tú autorices comprar en efectivo (o úsalo tú mismo si registras una venta en persona).
+            </p>
+            <input value={formSitio.codigoEfectivo || ""} onChange={e=>setFormSitio(f=>({...f,codigoEfectivo:e.target.value}))} placeholder="Ej: 4821"
+              style={{ width:"100%", maxWidth:220, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
           </div>
 
           <div style={{ display:"flex", gap:10 }}>
