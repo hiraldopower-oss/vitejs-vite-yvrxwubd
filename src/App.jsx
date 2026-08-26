@@ -1079,6 +1079,7 @@ export default function App() {
   const [siteConfig, setSiteConfig] = useState(SITE_CONFIG_INICIAL);
   const [powerNumbers, setPowerNumbers] = useState(POWER_NUMBERS_INICIAL);
   const [premiosPower, setPremiosPower] = useState([]);
+  const [gastosRifas, setGastosRifas] = useState({});
   const [toast, setToast] = useState(null);
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
 
@@ -1100,8 +1101,9 @@ export default function App() {
       const sc = await load("siteConfig", SITE_CONFIG_INICIAL);
       const pn = await load("powerNumbers", POWER_NUMBERS_INICIAL);
       const pp = await load("premiosPower", []);
+      const gr = await load("gastosRifas", {});
       setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp); setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
-      setPowerNumbers(pn); setPremiosPower(pp);
+      setPowerNumbers(pn); setPremiosPower(pp); setGastosRifas(gr);
       setReady(true);
     })();
   }, []);
@@ -1173,6 +1175,7 @@ export default function App() {
       const sc = await dbGet("siteConfig", SITE_CONFIG_INICIAL);
       const pn = await dbGet("powerNumbers", POWER_NUMBERS_INICIAL);
       const pp = await dbGet("premiosPower", []);
+      const gr = await dbGet("gastosRifas", {});
       setPendientes(p);
       setBoletos(b);
       setHistorial(h);
@@ -1180,6 +1183,7 @@ export default function App() {
       setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
       setPowerNumbers(pn);
       setPremiosPower(pp);
+      setGastosRifas(gr);
     } catch {}
   };
 
@@ -1411,6 +1415,7 @@ export default function App() {
           siteConfig={siteConfig} saveSiteConfig={sc=>save("siteConfig",sc,setSiteConfig)}
           powerNumbers={powerNumbers} savePowerNumbers={pn=>save("powerNumbers",pn,setPowerNumbers)}
           premiosPower={premiosPower} savePremiosPower={pp=>save("premiosPower",pp,setPremiosPower)} setPremiosPowerLocal={setPremiosPower}
+          gastosRifas={gastosRifas} saveGastosRifas={gr=>save("gastosRifas",gr,setGastosRifas)}
           onRefresh={refreshFromFirebase} />
       )}
 
@@ -2122,7 +2127,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, onRefresh }) {
+function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, onRefresh }) {
   const [emailLogin, setEmailLogin] = useState("");
   const [passLogin, setPassLogin] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -2226,10 +2231,33 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     const recaudado = comprasRifa.reduce((s,p)=>s+(p.total||0),0);
     const proyeccion = r.totalBoletos * (r.precio||0);
     const dias = Math.ceil((new Date(r.fechaSorteo) - new Date()) / 86400000);
-    return { rifa:r, vendidos, disponibles, pct, numCompras:comprasRifa.length, recaudado, proyeccion, dias };
+    const gasto = gastosRifas?.[r.id] || { promocion:0, inversion:0 };
+    const totalGasto = (Number(gasto.promocion)||0) + (Number(gasto.inversion)||0);
+    const gananciaNeta = recaudado - totalGasto;
+    return { rifa:r, vendidos, disponibles, pct, numCompras:comprasRifa.length, recaudado, proyeccion, dias, gasto, totalGasto, gananciaNeta };
   });
   const totalRecaudadoActivas = statsPorRifa.reduce((s,x)=>s+x.recaudado,0);
   const totalVendidosActivas = statsPorRifa.reduce((s,x)=>s+x.vendidos,0);
+  const totalGastoActivas = statsPorRifa.reduce((s,x)=>s+x.totalGasto,0);
+  const totalGananciaActivas = totalRecaudadoActivas - totalGastoActivas;
+
+  const [editandoGastoId, setEditandoGastoId] = useState(null);
+  const [formGasto, setFormGasto] = useState({ promocion:"", inversion:"" });
+  const empezarEditarGasto = (rifaId) => {
+    const g = gastosRifas?.[rifaId] || { promocion:0, inversion:0 };
+    setFormGasto({ promocion: String(g.promocion||0), inversion: String(g.inversion||0) });
+    setEditandoGastoId(rifaId);
+  };
+  const guardarGasto = async (rifaId) => {
+    const nuevo = {
+      ...(gastosRifas||{}),
+      [rifaId]: { promocion: Number(formGasto.promocion)||0, inversion: Number(formGasto.inversion)||0 }
+    };
+    const ok = await saveGastosRifas(nuevo);
+    if (ok===false) showToast("Error al guardar. Intenta de nuevo.", "warn");
+    else showToast("Gastos actualizados ✓", "ok");
+    setEditandoGastoId(null);
+  };
 
   const aprobar = async (p) => {
     const ticketsRef = doc(db, "hiraldopower", "tickets_" + p.rifaId);
@@ -2572,11 +2600,19 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                 <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color:"#818cf8" }}>{rifasActivas.length}</div>
                 <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Rifas activas</div>
               </div>
+              <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"14px 22px", minWidth:150 }}>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color:"#f87171" }}>{fmtMoney(totalGastoActivas)}</div>
+                <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Promoción + inversión</div>
+              </div>
+              <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"14px 22px", minWidth:150 }}>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color: totalGananciaActivas>=0?"#C6FF3D":"#f87171" }}>{fmtMoney(totalGananciaActivas)}</div>
+                <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Ganancia neta</div>
+              </div>
             </div>
           )}
 
           <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-            {statsPorRifa.map(({rifa:r, vendidos, disponibles, pct, numCompras, recaudado, proyeccion, dias}, idx)=>{
+            {statsPorRifa.map(({rifa:r, vendidos, disponibles, pct, numCompras, recaudado, proyeccion, dias, gasto, totalGasto, gananciaNeta}, idx)=>{
               const color = COLORES_RIFA[idx % COLORES_RIFA.length];
               return (
                 <div key={r.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:20, borderLeft:`3px solid ${color}` }}>
@@ -2614,6 +2650,55 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                       <div style={{ fontSize:14, fontWeight:800 }}>{(r.combos||[]).length}</div>
                       <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>combos activos</div>
                     </div>
+                  </div>
+
+                  <div style={{ marginTop:16, paddingTop:16, borderTop:"1px solid #232830" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: editandoGastoId===r.id ? 12 : 0 }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:"#9AA1AC", textTransform:"uppercase" }}>Promoción e inversión</span>
+                      {editandoGastoId!==r.id && (
+                        <button onClick={()=>empezarEditarGasto(r.id)} style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #333", color:"#F2F2EF", fontWeight:700, fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer" }}>
+                          <Pencil size={12}/> Editar
+                        </button>
+                      )}
+                    </div>
+
+                    {editandoGastoId!==r.id ? (
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10 }}>
+                        <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                          <div style={{ fontSize:14, fontWeight:800 }}>{fmtMoney(gasto.promocion||0)}</div>
+                          <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>promoción</div>
+                        </div>
+                        <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                          <div style={{ fontSize:14, fontWeight:800 }}>{fmtMoney(gasto.inversion||0)}</div>
+                          <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>inversión (premio, etc.)</div>
+                        </div>
+                        <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                          <div style={{ fontSize:14, fontWeight:800, color: gananciaNeta>=0?"#C6FF3D":"#f87171" }}>{fmtMoney(gananciaNeta)}</div>
+                          <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>ganancia neta</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:12 }}>
+                          <label>
+                            <span style={{ display:"block", fontSize:11, color:"#9AA1AC", marginBottom:4 }}>Promoción (RD$)</span>
+                            <input type="number" min="0" value={formGasto.promocion}
+                              onChange={e=>setFormGasto(f=>({...f, promocion:e.target.value}))}
+                              style={{ width:"100%", background:"#0D0F12", border:"1px solid #333", color:"#F2F2EF", padding:"10px 12px", borderRadius:8, fontSize:14, outline:"none" }} />
+                          </label>
+                          <label>
+                            <span style={{ display:"block", fontSize:11, color:"#9AA1AC", marginBottom:4 }}>Inversión (RD$)</span>
+                            <input type="number" min="0" value={formGasto.inversion}
+                              onChange={e=>setFormGasto(f=>({...f, inversion:e.target.value}))}
+                              style={{ width:"100%", background:"#0D0F12", border:"1px solid #333", color:"#F2F2EF", padding:"10px 12px", borderRadius:8, fontSize:14, outline:"none" }} />
+                          </label>
+                        </div>
+                        <div style={{ display:"flex", gap:10 }}>
+                          <button onClick={()=>guardarGasto(r.id)} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Guardar</button>
+                          <button onClick={()=>setEditandoGastoId(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
