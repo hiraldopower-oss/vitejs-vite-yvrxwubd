@@ -1281,6 +1281,25 @@ export default function App() {
 
   /* ---- Notificaciones de nuevas compras pendientes (con sonido) ---- */
   const [notifPermiso, setNotifPermiso] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+
+  // Registra el service worker (necesario para que Chrome en Android pueda
+  // mostrar notificaciones de verdad, no solo el sonido/vibración).
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(()=>{});
+    }
+  }, []);
+
+  const mostrarNotificacion = async (titulo, opciones) => {
+    if ("serviceWorker" in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(titulo, opciones);
+        return;
+      } catch {}
+    }
+    try { new Notification(titulo, opciones); } catch {}
+  };
   const idsPendientesVistosRef = useRef(null);
 
   const pedirPermisoNotificaciones = async () => {
@@ -1325,11 +1344,11 @@ export default function App() {
           if (nuevas.length > 0 && notifPermiso === "granted") {
             sonarAviso();
             nuevas.forEach(n => {
-              try {
-                new Notification("¡Nueva compra en Hiraldo Power! 🎟️", {
-                  body: `${n.nombre} · ${n.cantidad} boleto${n.cantidad>1?"s":""} · ${fmtMoney(n.total)}`,
-                });
-              } catch {}
+              mostrarNotificacion("¡Nueva compra en Hiraldo Power! 🎟️", {
+                body: `${n.nombre} · ${n.cantidad} boleto${n.cantidad>1?"s":""} · ${fmtMoney(n.total)}`,
+                tag: "compra-" + n.id,
+                requireInteraction: true,
+              });
             });
           }
           idsPendientesVistosRef.current = new Set(p.map(x => x.id));
