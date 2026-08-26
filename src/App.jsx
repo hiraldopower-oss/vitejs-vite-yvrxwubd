@@ -167,12 +167,16 @@ function normalizarTelefono(tel) {
 // por WhatsApp con un toque, tras aprobar una compra.
 function mensajeAvisoNumeros({ nombre, asignados, rifaTitulo, ganadoresPower }) {
   const primerNombre = (nombre || "").trim().split(" ")[0] || "";
-  let msg = `¡Hola ${primerNombre}! 🎉 Gracias por participar en "${rifaTitulo}".\n\n`;
+  let msg = `¡Hola ${primerNombre}! 🎉 Gracias por participar en las Rifas de Hiraldo Power by Kenny Hiraldo.\n\n`;
+  msg += `Jugaste en: "${rifaTitulo}"\n`;
   msg += `Tu${asignados.length>1?"s números son":" número es"}: ${asignados.map(n=>"#"+n).join(", ")}\n\n`;
   if (ganadoresPower && ganadoresPower.length>0) {
     msg += `⚡ ¡Felicidades! Uno de tus números (${ganadoresPower.map(n=>"#"+n).join(", ")}) es un Número Power y ganaste RD$${PREMIO_POWER_MONTO.toLocaleString("es-DO")} en efectivo al instante. Nos pondremos en contacto contigo para coordinar el pago.\n\n`;
   }
-  msg += `Guarda este mensaje como comprobante. ¡Mucha suerte en el sorteo! Sigue participando, cada boleto es una nueva oportunidad de ganar 🍀`;
+  msg += `Guarda este mensaje como comprobante. ¡Mucha suerte en el sorteo! Sigue participando, cada boleto es una nueva oportunidad de ganar 🍀\n\n`;
+  msg += `Síguenos para enterarte de nuevas rifas y sorteos en vivo:\n`;
+  msg += `📸 Instagram: @kennyhiraldo22\n`;
+  msg += `👤 Facebook: Kenny Antonio Hiraldo Balbuena`;
   return msg;
 }
 
