@@ -1279,19 +1279,68 @@ export default function App() {
     return () => window.removeEventListener("hashchange", check);
   }, []);
 
+  /* ---- Notificaciones de nuevas compras pendientes (con sonido) ---- */
+  const [notifPermiso, setNotifPermiso] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  const idsPendientesVistosRef = useRef(null);
+
+  const pedirPermisoNotificaciones = async () => {
+    if (typeof Notification === "undefined") { showToast("Tu navegador no soporta notificaciones.", "warn"); return; }
+    try {
+      const permiso = await Notification.requestPermission();
+      setNotifPermiso(permiso);
+      if (permiso === "granted") showToast("Notificaciones activadas ✓", "ok");
+      else showToast("No se activaron las notificaciones.", "warn");
+    } catch {
+      showToast("No se pudo pedir permiso de notificaciones.", "warn");
+    }
+  };
+
+  const sonarAviso = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine"; osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(); osc.stop(ctx.currentTime + 0.5);
+    } catch {}
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  };
+
   /* ---- Auto-refresh pendientes cuando el admin está abierto ---- */
   useEffect(() => {
     if (view !== "admin") return;
     const intervalo = setInterval(async () => {
       try {
         const p = await dbGet("pending", []);
+        // La primera vez que corre (tras entrar al admin), solo recordamos
+        // cuáles compras ya existían — no queremos notificar por compras viejas.
+        if (idsPendientesVistosRef.current === null) {
+          idsPendientesVistosRef.current = new Set(p.map(x => x.id));
+        } else {
+          const nuevas = p.filter(x => x.estado === "pendiente" && !idsPendientesVistosRef.current.has(x.id));
+          if (nuevas.length > 0 && notifPermiso === "granted") {
+            sonarAviso();
+            nuevas.forEach(n => {
+              try {
+                new Notification("¡Nueva compra en Hiraldo Power! 🎟️", {
+                  body: `${n.nombre} · ${n.cantidad} boleto${n.cantidad>1?"s":""} · ${fmtMoney(n.total)}`,
+                });
+              } catch {}
+            });
+          }
+          idsPendientesVistosRef.current = new Set(p.map(x => x.id));
+        }
         setPendientes(p);
         const b = await cargarTodosLosBoletos(rifas);
         setBoletos(b);
       } catch {}
     }, 20000); // cada 20 segundos
     return () => clearInterval(intervalo);
-  }, [view, rifas]);
+  }, [view, rifas, notifPermiso]);
 
   if (!ready) return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#C6FF3D", gap:12, fontFamily:"'Arial Black',sans-serif", letterSpacing:1 }}>
@@ -1500,6 +1549,7 @@ export default function App() {
           powerNumbers={powerNumbers} savePowerNumbers={pn=>save("powerNumbers",pn,setPowerNumbers)}
           premiosPower={premiosPower} savePremiosPower={pp=>save("premiosPower",pp,setPremiosPower)} setPremiosPowerLocal={setPremiosPower}
           gastosRifas={gastosRifas} saveGastosRifas={gr=>save("gastosRifas",gr,setGastosRifas)}
+          notifPermiso={notifPermiso} pedirPermisoNotificaciones={pedirPermisoNotificaciones}
           onRefresh={refreshFromFirebase} />
       )}
 
@@ -2214,7 +2264,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 /* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, onRefresh }) {
+function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, notifPermiso, pedirPermisoNotificaciones, onRefresh }) {
   const [avisoWhatsapp, setAvisoWhatsapp] = useState(null);
   const [emailLogin, setEmailLogin] = useState("");
   const [passLogin, setPassLogin] = useState("");
@@ -2657,6 +2707,12 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
               <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase", letterSpacing:"0.5px", marginTop:3 }}>{lbl}</div>
             </div>
           ))}
+          {notifPermiso!=="granted" && notifPermiso!=="unsupported" && (
+            <button onClick={pedirPermisoNotificaciones}
+              style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #818cf8", color:"#818cf8", fontWeight:700, fontSize:12, padding:"12px 18px", borderRadius:9, cursor:"pointer" }}>
+              🔔 Activar notificaciones
+            </button>
+          )}
           <button onClick={handleRefresh} disabled={refreshing}
             style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #C6FF3D", color:"#C6FF3D", fontWeight:700, fontSize:12, padding:"12px 18px", borderRadius:9, cursor:refreshing?"not-allowed":"pointer", opacity:refreshing?0.6:1 }}>
             {refreshing ? "Actualizando…" : "↻ Actualizar"}
