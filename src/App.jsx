@@ -105,6 +105,17 @@ const RIFAS_INICIALES = [
   },
 ];
 
+const MENSAJE_WHATSAPP_INICIAL = `¡Hola {nombre}! 🎉 Gracias por participar en las Rifas de Hiraldo Power by Kenny Hiraldo.
+
+Jugaste en: "{rifa}"
+{numeros}
+{lineaPower}
+Guarda este mensaje como comprobante. ¡Mucha suerte en el sorteo! Sigue participando, cada boleto es una nueva oportunidad de ganar 🍀
+
+Síguenos para enterarte de nuevas rifas y sorteos en vivo:
+📸 Instagram: {instagram}
+👤 Facebook: {facebook}`;
+
 const SITE_CONFIG_INICIAL = {
   marca: "HIRALDO POWER",
   logoUrl: "",
@@ -115,6 +126,9 @@ const SITE_CONFIG_INICIAL = {
   footerTexto: "Rifas en vivo y verificables",
   colorAcento: "#C6FF3D",
   colorTitulo1: "#F2F2EF",
+  instagram: "@kennyhiraldo22",
+  facebook: "Kenny Antonio Hiraldo Balbuena",
+  mensajeWhatsapp: MENSAJE_WHATSAPP_INICIAL,
 };
 
 
@@ -165,19 +179,20 @@ function normalizarTelefono(tel) {
 
 // Arma el mensaje de agradecimiento + números asignados que el admin envía
 // por WhatsApp con un toque, tras aprobar una compra.
-function mensajeAvisoNumeros({ nombre, asignados, rifaTitulo, ganadoresPower }) {
+function mensajeAvisoNumeros({ nombre, asignados, rifaTitulo, ganadoresPower }, siteConfig) {
   const primerNombre = (nombre || "").trim().split(" ")[0] || "";
-  let msg = `¡Hola ${primerNombre}! 🎉 Gracias por participar en las Rifas de Hiraldo Power by Kenny Hiraldo.\n\n`;
-  msg += `Jugaste en: "${rifaTitulo}"\n`;
-  msg += `Tu${asignados.length>1?"s números son":" número es"}: ${asignados.map(n=>"#"+n).join(", ")}\n\n`;
-  if (ganadoresPower && ganadoresPower.length>0) {
-    msg += `⚡ ¡Felicidades! Uno de tus números (${ganadoresPower.map(n=>"#"+n).join(", ")}) es un Número Power y ganaste RD$${PREMIO_POWER_MONTO.toLocaleString("es-DO")} en efectivo al instante. Nos pondremos en contacto contigo para coordinar el pago.\n\n`;
-  }
-  msg += `Guarda este mensaje como comprobante. ¡Mucha suerte en el sorteo! Sigue participando, cada boleto es una nueva oportunidad de ganar 🍀\n\n`;
-  msg += `Síguenos para enterarte de nuevas rifas y sorteos en vivo:\n`;
-  msg += `📸 Instagram: @kennyhiraldo22\n`;
-  msg += `👤 Facebook: Kenny Antonio Hiraldo Balbuena`;
-  return msg;
+  const numeros = `Tu${asignados.length>1?"s números son":" número es"}: ${asignados.map(n=>"#"+n).join(", ")}`;
+  const lineaPower = (ganadoresPower && ganadoresPower.length>0)
+    ? `⚡ ¡Felicidades! Uno de tus números (${ganadoresPower.map(n=>"#"+n).join(", ")}) es un Número Power y ganaste RD$${PREMIO_POWER_MONTO.toLocaleString("es-DO")} en efectivo al instante. Nos pondremos en contacto contigo para coordinar el pago.\n`
+    : "";
+  const plantilla = siteConfig?.mensajeWhatsapp || MENSAJE_WHATSAPP_INICIAL;
+  return plantilla
+    .replaceAll("{nombre}", primerNombre)
+    .replaceAll("{rifa}", rifaTitulo || "")
+    .replaceAll("{numeros}", numeros)
+    .replaceAll("{lineaPower}", lineaPower)
+    .replaceAll("{instagram}", siteConfig?.instagram || "")
+    .replaceAll("{facebook}", siteConfig?.facebook || "");
 }
 
 // Devuelve true si la fecha/hora del sorteo ya pasó (tiempo agotado)
@@ -2616,7 +2631,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:18, lineHeight:1.5 }}>
               Avisa a <strong style={{ color:"#F2F2EF" }}>{avisoWhatsapp.nombre}</strong> sus números con un solo toque:
             </p>
-            <a href={`https://wa.me/${normalizarTelefono(avisoWhatsapp.telefono)}?text=${encodeURIComponent(mensajeAvisoNumeros(avisoWhatsapp))}`}
+            <a href={`https://wa.me/${normalizarTelefono(avisoWhatsapp.telefono)}?text=${encodeURIComponent(mensajeAvisoNumeros(avisoWhatsapp, siteConfig))}`}
               target="_blank" rel="noopener noreferrer"
               onClick={()=>setAvisoWhatsapp(null)}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"#25D366", color:"#0D0F12", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, textDecoration:"none", marginBottom:10 }}>
@@ -3252,6 +3267,38 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                 style={{ flex:1, background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
             </div>
           </label>
+
+          <div style={{ borderTop:"1px solid #232830", paddingTop:20, marginTop:6, marginBottom:20 }}>
+            <h4 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:4, display:"flex", alignItems:"center", gap:8 }}>
+              <Zap size={15} style={{ color:"#25D366" }}/> Mensaje de WhatsApp al aprobar una compra
+            </h4>
+            <p style={{ color:"#9AA1AC", fontSize:12, marginBottom:14, lineHeight:1.5 }}>
+              Este es el mensaje que se abre listo para enviar cuando apruebas una compra. Usa estos marcadores donde quieras dentro del texto — se reemplazan automáticamente: <code style={{background:"#0D0F12",padding:"1px 5px",borderRadius:4}}>{"{nombre}"}</code> <code style={{background:"#0D0F12",padding:"1px 5px",borderRadius:4}}>{"{rifa}"}</code> <code style={{background:"#0D0F12",padding:"1px 5px",borderRadius:4}}>{"{numeros}"}</code> <code style={{background:"#0D0F12",padding:"1px 5px",borderRadius:4}}>{"{lineaPower}"}</code> <code style={{background:"#0D0F12",padding:"1px 5px",borderRadius:4}}>{"{instagram}"}</code> <code style={{background:"#0D0F12",padding:"1px 5px",borderRadius:4}}>{"{facebook}"}</code>
+            </p>
+
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:14, marginBottom:14 }}>
+              <label>
+                <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Instagram</span>
+                <input value={formSitio.instagram || ""} onChange={e=>setFormSitio(f=>({...f,instagram:e.target.value}))} placeholder="@tuusuario"
+                  style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+              </label>
+              <label>
+                <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Facebook</span>
+                <input value={formSitio.facebook || ""} onChange={e=>setFormSitio(f=>({...f,facebook:e.target.value}))} placeholder="Nombre de tu página"
+                  style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
+              </label>
+            </div>
+
+            <label style={{ display:"block", marginBottom:8 }}>
+              <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>Texto del mensaje</span>
+              <textarea value={formSitio.mensajeWhatsapp || ""} onChange={e=>setFormSitio(f=>({...f,mensajeWhatsapp:e.target.value}))} rows={10}
+                style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:13, outline:"none", fontFamily:"inherit", lineHeight:1.5, resize:"vertical" }} />
+            </label>
+            <button onClick={()=>setFormSitio(f=>({...f, mensajeWhatsapp: MENSAJE_WHATSAPP_INICIAL}))}
+              style={{ background:"none", border:"1px solid #232830", color:"#9AA1AC", fontWeight:700, fontSize:12, padding:"9px 14px", borderRadius:8, cursor:"pointer" }}>
+              Restaurar mensaje por defecto
+            </button>
+          </div>
 
           <div style={{ display:"flex", gap:10 }}>
             <button onClick={async()=>{
