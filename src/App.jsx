@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles, Menu, Home } from "lucide-react";
+import { Zap, Trophy, Clock, ChevronRight, ShieldCheck, Lock, AlertCircle, PartyPopper, Award, Pencil, Trash2, Plus, ImagePlus, Check, X, User, Phone, Flag, Rocket, Crown, Flame, Sparkles, Menu, Home, Save } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, runTransaction } from "firebase/firestore";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
@@ -411,6 +411,49 @@ function Ganadores({ historial }) {
             <div style={{ fontSize:12, color:"#9AA1AC", flexShrink:0, textAlign:"right" }}>{new Date(h.fecha).toLocaleDateString("es-DO",{day:"2-digit",month:"2-digit",year:"numeric"})}</div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function TerminosCondiciones({ siteConfig, onVolver }) {
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px" }}>
+      <button onClick={onVolver} style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", color:"#9AA1AC", fontSize:13, cursor:"pointer", marginBottom:20, padding:0 }}>
+        ← Volver al inicio
+      </button>
+      <h2 style={{ fontFamily: "'Arial Black',sans-serif", fontSize: 22, marginBottom: 6 }}>TÉRMINOS Y CONDICIONES</h2>
+      <p style={{ color: "#9AA1AC", fontSize: 13, marginBottom: 28 }}>Reglas claras para que compres con confianza en {siteConfig?.marca || "Hiraldo Power"}.</p>
+
+      <div style={{ display:"flex", flexDirection:"column", gap:20, color:"#D6D9DC", fontSize:14, lineHeight:1.6 }}>
+        <div>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, color:"#F2F2EF", marginBottom:8 }}>1. Cómo funcionan nuestras rifas</h3>
+          <p>Cada rifa tiene un número total de boletos disponibles. Al comprar, se te asignan números al azar dentro del rango disponible de esa rifa. El sorteo se realiza en vivo una vez la rifa se cierra o llega la fecha programada.</p>
+        </div>
+        <div>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, color:"#F2F2EF", marginBottom:8 }}>2. Validación de pagos</h3>
+          <p>Toda compra queda en estado "pendiente" hasta que verificamos el comprobante de pago enviado. Este proceso toma un máximo de 24 horas. Una vez aprobada, tus números quedan confirmados y puedes verificarlos en la sección "Verificar boleto".</p>
+        </div>
+        <div>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, color:"#F2F2EF", marginBottom:8 }}>3. Números Power</h3>
+          <p>Algunas rifas incluyen números "premiados" que otorgan un premio en efectivo instantáneo si te toca alguno al comprar. Estos números se asignan al azar igual que cualquier otro boleto; no se pueden elegir ni predecir de antemano.</p>
+        </div>
+        <div>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, color:"#F2F2EF", marginBottom:8 }}>4. Entrega de premios</h3>
+          <p>Una vez realizado el sorteo, nos pondremos en contacto con el ganador a través del teléfono proporcionado al momento de la compra, para coordinar la entrega del premio. Los premios en efectivo (incluyendo Números Power) se pagan directamente al ganador.</p>
+        </div>
+        <div>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, color:"#F2F2EF", marginBottom:8 }}>5. Rifas no completadas</h3>
+          <p>Si una rifa no logra vender la cantidad mínima de boletos necesaria antes de la fecha de sorteo, el organizador podrá reprogramar la fecha o, en su defecto, reembolsar el monto pagado por los boletos ya vendidos.</p>
+        </div>
+        <div>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, color:"#F2F2EF", marginBottom:8 }}>6. Datos personales</h3>
+          <p>El nombre y teléfono que proporcionas al comprar se usan únicamente para validar tu compra, contactarte en caso de ser ganador, y coordinar la entrega de premios. No compartimos esta información con terceros.</p>
+        </div>
+        <div>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, color:"#F2F2EF", marginBottom:8 }}>7. Contacto</h3>
+          <p>Cualquier duda sobre estos términos, tu compra o un sorteo puedes escribirnos directamente por WhatsApp usando el botón flotante en la página.</p>
+        </div>
       </div>
     </div>
   );
@@ -1405,6 +1448,7 @@ export default function App() {
 
       {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} rifas={rifas} />}
       {view==="ganadores" && <Ganadores historial={historial} />}
+      {view==="terminos" && <TerminosCondiciones siteConfig={siteConfig} onVolver={()=>setView("catalogo")} />}
       {view==="admin" && (
         <Admin boletos={boletos} saveBoletos={saveBoletos} setBoletosLocal={setBoletos}
           pendientes={pendientes} savePendientes={p=>save("pending",p,setPendientes)} setPendientesLocal={setPendientes}
@@ -1427,6 +1471,9 @@ export default function App() {
           {" "}<strong style={{ color:"#F2F2EF" }}>{siteConfig.marca}</strong>
         </div>
         <p style={{ marginTop:6 }}>{siteConfig.footerTexto}</p>
+        <p style={{ marginTop:10 }}>
+          <a onClick={()=>setView("terminos")} style={{ color:"#9AA1AC", textDecoration:"underline", cursor:"pointer" }}>Términos y condiciones</a>
+        </p>
       </footer>
 
       {/* ── BOTÓN FLOTANTE WHATSAPP ── */}
@@ -1468,6 +1515,7 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
   const [comboSel, setComboSel] = useState(null);
   const [cantidad, setCantidad] = useState(minBol);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [compraExitosa, setCompraExitosa] = useState(null);
   const total = comboSel ? comboSel.precio : cantidad * rifa.precio;
   const cantidadFinal = comboSel ? comboSel.cantidad : cantidad;
   const elegirCombo = (combo) => { setComboSel(combo); setCantidad(combo.cantidad); };
@@ -1577,7 +1625,27 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
             }
             setShowCheckout(false); setCantidad(minBol); setComboSel(null);
             showToast("¡Compra recibida! Validaremos tu pago en máximo 24 horas.","ok");
+            setCompraExitosa({ nombre: datos.nombre, telefono: datos.telefono, cantidad: cantidadFinal, total, rifaTitulo: rifa.titulo });
           }} />
+      )}
+      {compraExitosa && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:20 }}>
+          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:28, maxWidth:400, width:"100%", textAlign:"center" }}>
+            <PartyPopper size={36} style={{ color:"#C6FF3D", marginBottom:12 }}/>
+            <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, marginBottom:8 }}>¡Compra recibida!</h3>
+            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20, lineHeight:1.5 }}>
+              Validaremos tu pago en máximo 24 horas. Para agilizar tu confirmación, envíanos tu comprobante por WhatsApp con un solo toque:
+            </p>
+            <a href={`https://wa.me/18293108799?text=${encodeURIComponent(`Hola, acabo de comprar ${compraExitosa.cantidad} boleto${compraExitosa.cantidad>1?"s":""} de "${compraExitosa.rifaTitulo}" por ${fmtMoney(compraExitosa.total)}. Mi nombre es ${compraExitosa.nombre}. Aquí les envío mi comprobante de pago:`)}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"#25D366", color:"#0D0F12", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, textDecoration:"none", marginBottom:10 }}>
+              Confirmar por WhatsApp
+            </a>
+            <button onClick={()=>setCompraExitosa(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer", width:"100%" }}>
+              Cerrar
+            </button>
+          </div>
+        </div>
       )}
     </main>
   );
@@ -2259,6 +2327,22 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     setEditandoGastoId(null);
   };
 
+  const descargarRespaldo = () => {
+    const respaldo = {
+      fechaRespaldo: new Date().toISOString(),
+      rifas, boletos, pendientes, ganador, historial,
+      metodosPago, siteConfig, powerNumbers, premiosPower, gastosRifas
+    };
+    const blob = new Blob([JSON.stringify(respaldo, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const fecha = new Date().toISOString().slice(0,10);
+    a.href = url; a.download = `respaldo-hiraldopower-${fecha}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Respaldo descargado ✓", "ok");
+  };
+
   const aprobar = async (p) => {
     const ticketsRef = doc(db, "hiraldopower", "tickets_" + p.rifaId);
     const pendRef = doc(db, "hiraldopower", "pending");
@@ -2555,6 +2639,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             ["power", "⚡ Números Power", premiosPowerPendientes.length || null, premiosPowerPendientes.length > 0 ? "#f59e0b" : null],
             ["sorteo", "🎲 Sorteo en vivo", null, null],
             ["pagina", "✏️ Editar página", null, null],
+            ["respaldo", "💾 Respaldo", null, null],
           ].map(([id, label, badge, badgeColor]) => (
             <button key={id} onClick={()=>setTabAdmin(id)} style={{
               display:"flex", alignItems:"center", justifyContent:"space-between",
@@ -3149,6 +3234,24 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
               Restaurar valores originales
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ---- TAB: RESPALDO ---- */}
+      {tabAdmin==="respaldo" && (
+        <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:28, maxWidth:700 }}>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:6, display:"flex", alignItems:"center", gap:8 }}>
+            <Save size={16} style={{ color:"#C6FF3D" }}/> Respaldo de tus datos
+          </h3>
+          <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20, lineHeight:1.5 }}>
+            Descarga una copia completa de tu información (rifas, boletos, compras, historial de ganadores, Números Power, métodos de pago y configuración del sitio) en un archivo. Guárdalo en tu computadora o en Google Drive. Te recomendamos hacer esto cada semana, o antes de cualquier cambio grande en el sitio.
+          </p>
+          <button onClick={descargarRespaldo} style={{ display:"flex", alignItems:"center", gap:8, background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"14px 22px", borderRadius:10, cursor:"pointer" }}>
+            <Save size={16}/> Descargar respaldo (.json)
+          </button>
+          <p style={{ color:"#9AA1AC", fontSize:12, marginTop:16 }}>
+            Este archivo es solo para guardar como copia de seguridad — no lo compartas públicamente, ya que incluye nombres y teléfonos de compradores.
+          </p>
         </div>
       )}
         </main>
