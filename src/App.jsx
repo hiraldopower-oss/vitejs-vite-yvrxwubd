@@ -155,6 +155,27 @@ const METODOS_PAGO_INICIALES = [
 
 function fmtMoney(n) { return "RD$" + Number(n).toLocaleString("es-DO"); }
 
+// Convierte un teléfono como "809-555-1234" al formato que necesita wa.me
+// (solo dígitos, con el código de país 1 si el número no lo trae ya).
+function normalizarTelefono(tel) {
+  const digitos = (tel || "").replace(/\D/g, "");
+  if (digitos.length === 10) return "1" + digitos;
+  return digitos;
+}
+
+// Arma el mensaje de agradecimiento + números asignados que el admin envía
+// por WhatsApp con un toque, tras aprobar una compra.
+function mensajeAvisoNumeros({ nombre, asignados, rifaTitulo, ganadoresPower }) {
+  const primerNombre = (nombre || "").trim().split(" ")[0] || "";
+  let msg = `¡Hola ${primerNombre}! 🎉 Gracias por participar en "${rifaTitulo}".\n\n`;
+  msg += `Tu${asignados.length>1?"s números son":" número es"}: ${asignados.map(n=>"#"+n).join(", ")}\n\n`;
+  if (ganadoresPower && ganadoresPower.length>0) {
+    msg += `⚡ ¡Felicidades! Uno de tus números (${ganadoresPower.map(n=>"#"+n).join(", ")}) es un Número Power y ganaste RD$${PREMIO_POWER_MONTO.toLocaleString("es-DO")} en efectivo al instante. Nos pondremos en contacto contigo para coordinar el pago.\n\n`;
+  }
+  msg += `Guarda este mensaje como comprobante. ¡Mucha suerte en el sorteo! Sigue participando, cada boleto es una nueva oportunidad de ganar 🍀`;
+  return msg;
+}
+
 // Devuelve true si la fecha/hora del sorteo ya pasó (tiempo agotado)
 function sorteoVencido(fechaStr, hora) {
   if (!fechaStr) return false;
@@ -1515,7 +1536,6 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
   const [comboSel, setComboSel] = useState(null);
   const [cantidad, setCantidad] = useState(minBol);
   const [showCheckout, setShowCheckout] = useState(false);
-  const [compraExitosa, setCompraExitosa] = useState(null);
   const total = comboSel ? comboSel.precio : cantidad * rifa.precio;
   const cantidadFinal = comboSel ? comboSel.cantidad : cantidad;
   const elegirCombo = (combo) => { setComboSel(combo); setCantidad(combo.cantidad); };
@@ -1625,27 +1645,7 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
             }
             setShowCheckout(false); setCantidad(minBol); setComboSel(null);
             showToast("¡Compra recibida! Validaremos tu pago en máximo 24 horas.","ok");
-            setCompraExitosa({ nombre: datos.nombre, telefono: datos.telefono, cantidad: cantidadFinal, total, rifaTitulo: rifa.titulo });
           }} />
-      )}
-      {compraExitosa && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:20 }}>
-          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:28, maxWidth:400, width:"100%", textAlign:"center" }}>
-            <PartyPopper size={36} style={{ color:"#C6FF3D", marginBottom:12 }}/>
-            <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18, marginBottom:8 }}>¡Compra recibida!</h3>
-            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:20, lineHeight:1.5 }}>
-              Validaremos tu pago en máximo 24 horas. Para agilizar tu confirmación, envíanos tu comprobante por WhatsApp con un solo toque:
-            </p>
-            <a href={`https://wa.me/18293108799?text=${encodeURIComponent(`Hola, acabo de comprar ${compraExitosa.cantidad} boleto${compraExitosa.cantidad>1?"s":""} de "${compraExitosa.rifaTitulo}" por ${fmtMoney(compraExitosa.total)}. Mi nombre es ${compraExitosa.nombre}. Aquí les envío mi comprobante de pago:`)}`}
-              target="_blank" rel="noopener noreferrer"
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"#25D366", color:"#0D0F12", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, textDecoration:"none", marginBottom:10 }}>
-              Confirmar por WhatsApp
-            </a>
-            <button onClick={()=>setCompraExitosa(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer", width:"100%" }}>
-              Cerrar
-            </button>
-          </div>
-        </div>
       )}
     </main>
   );
@@ -2196,6 +2196,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
    ADMIN PANEL
    ============================================================ */
 function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, onRefresh }) {
+  const [avisoWhatsapp, setAvisoWhatsapp] = useState(null);
   const [emailLogin, setEmailLogin] = useState("");
   const [passLogin, setPassLogin] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -2391,7 +2392,9 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
 
     // ¿Alguno de los boletos asignados es un Número Power?
     const ganadoresPower = asignados.filter(num => (powerNumbers || []).includes(num));
+    let ganoPower = false;
     if (ganadoresPower.length > 0) {
+      ganoPower = true;
       const premioRef = doc(db, "hiraldopower", "premiosPower");
       let nextPremiosFinal = null;
       try {
@@ -2420,6 +2423,12 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
         showToast("¡Salió un Número Power, pero hubo un error al registrarlo! Anótalo a mano.", "warn");
       }
     }
+
+    setAvisoWhatsapp({
+      nombre: p.nombre, telefono: p.telefono, asignados,
+      rifaTitulo: tituloRifa(p.rifaId),
+      ganadoresPower: ganoPower ? ganadoresPower : []
+    });
   };
 
   const rechazar = async (p) => {
@@ -2593,6 +2602,28 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
   return (
     <div style={{ maxWidth:1600, margin:"0 auto" }} className="admin-main">
       {editando && <EditorRifa rifa={editando==="nueva"?null:editando} onGuardar={guardarRifa} onCancelar={()=>setEditando(null)} />}
+
+      {avisoWhatsapp && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, padding:20 }}>
+          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:28, maxWidth:420, width:"100%" }}>
+            <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:17, marginBottom:6, display:"flex", alignItems:"center", gap:8 }}>
+              <Check size={18} style={{ color:"#C6FF3D" }}/> Compra aprobada
+            </h3>
+            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:18, lineHeight:1.5 }}>
+              Avisa a <strong style={{ color:"#F2F2EF" }}>{avisoWhatsapp.nombre}</strong> sus números con un solo toque:
+            </p>
+            <a href={`https://wa.me/${normalizarTelefono(avisoWhatsapp.telefono)}?text=${encodeURIComponent(mensajeAvisoNumeros(avisoWhatsapp))}`}
+              target="_blank" rel="noopener noreferrer"
+              onClick={()=>setAvisoWhatsapp(null)}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"#25D366", color:"#0D0F12", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, textDecoration:"none", marginBottom:10 }}>
+              Enviar por WhatsApp
+            </a>
+            <button onClick={()=>setAvisoWhatsapp(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer", width:"100%" }}>
+              Cerrar sin enviar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* TOPBAR */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"28px 40px 0", flexWrap:"wrap", gap:10 }}>
