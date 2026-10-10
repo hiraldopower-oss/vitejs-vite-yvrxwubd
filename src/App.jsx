@@ -215,6 +215,161 @@ function mensajeAvisoNumeros({ nombre, asignados, rifaTitulo, ganadoresPower }, 
     .replaceAll("{facebook}", siteConfig?.facebook || "");
 }
 
+// Enmascara el nombre del comprador para mostrarlo de forma parcial en la
+// imagen del boleto (privacidad): "Raquel Herrera" -> "RAQU***RA"
+function enmascararNombre(nombre) {
+  const limpio = (nombre || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (limpio.length <= 6) return limpio;
+  return limpio.slice(0, 4) + "***" + limpio.slice(-2);
+}
+
+// Enmascara el teléfono del comprador: "809-555-1234" -> "8095****34"
+function enmascararTelefono(tel) {
+  const digitos = (tel || "").replace(/\D/g, "");
+  if (digitos.length <= 6) return digitos;
+  return digitos.slice(0, 4) + "****" + digitos.slice(-2);
+}
+
+// Dibuja un rectángulo con bordes redondeados en un canvas
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Genera la imagen del boleto (tarjeta estilo "PASOLA ADRI TUCAN") en un
+// canvas y entrega un dataURL PNG por medio de cb. Si la rifa tiene foto de
+// portada la incluye arriba; si el comprador tiene varios números los
+// acomoda en una cuadrícula en vez de un solo número gigante.
+function generarImagenBoleto({ nombre, telefono, asignados, rifaTitulo, rifaImagen }, cb) {
+  const W = 1000, H = 1400;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const dibujarResto = (imgPortada) => {
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, "#111827");
+    grad.addColorStop(1, "#05070A");
+    ctx.fillStyle = grad;
+    roundRect(ctx, 0, 0, W, H, 40);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(198,255,61,0.45)";
+    ctx.lineWidth = 4;
+    roundRect(ctx, 6, 6, W - 12, H - 12, 36);
+    ctx.stroke();
+
+    const pad = 50;
+    let y = pad;
+    const fotoH = 460;
+
+    if (imgPortada) {
+      ctx.save();
+      roundRect(ctx, pad, y, W - pad * 2, fotoH, 24);
+      ctx.clip();
+      const scale = Math.max((W - pad * 2) / imgPortada.width, fotoH / imgPortada.height);
+      const iw = imgPortada.width * scale, ih = imgPortada.height * scale;
+      const ix = pad + ((W - pad * 2) - iw) / 2, iy = y + (fotoH - ih) / 2;
+      ctx.drawImage(imgPortada, ix, iy, iw, ih);
+      ctx.restore();
+      const g2 = ctx.createLinearGradient(0, y + fotoH - 130, 0, y + fotoH);
+      g2.addColorStop(0, "rgba(5,7,10,0)");
+      g2.addColorStop(1, "rgba(5,7,10,0.9)");
+      ctx.fillStyle = g2;
+      ctx.fillRect(pad, y + fotoH - 130, W - pad * 2, 130);
+      y += fotoH + 40;
+    } else {
+      y += 10;
+    }
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#C6FF3D";
+    ctx.font = "800 30px Arial";
+    ctx.fillText((rifaTitulo || "").toUpperCase(), W / 2, y);
+    y += 46;
+
+    ctx.fillStyle = "#9AA1AC";
+    ctx.font = "700 20px Arial";
+    ctx.fillText(asignados.length > 1 ? "TUS NÚMEROS DE LA SUERTE" : "TU NÚMERO DE LA SUERTE", W / 2, y);
+    y += 40;
+
+    if (asignados.length === 1) {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "800 150px Arial";
+      ctx.fillText("#" + asignados[0], W / 2, y + 140);
+      y += 190;
+    } else {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "800 54px Arial";
+      const porFila = asignados.length <= 6 ? 2 : 3;
+      const filas = [];
+      for (let i = 0; i < asignados.length; i += porFila) filas.push(asignados.slice(i, i + porFila));
+      filas.forEach((fila) => {
+        y += 66;
+        ctx.fillText(fila.map((n) => "#" + n).join("   "), W / 2, y);
+      });
+      y += 40;
+    }
+
+    const badgeW = 170, badgeH = 46;
+    ctx.fillStyle = "rgba(34,197,94,0.15)";
+    roundRect(ctx, W / 2 - badgeW / 2, y, badgeW, badgeH, 23);
+    ctx.fill();
+    ctx.strokeStyle = "#22c55e";
+    ctx.lineWidth = 2;
+    roundRect(ctx, W / 2 - badgeW / 2, y, badgeW, badgeH, 23);
+    ctx.stroke();
+    ctx.fillStyle = "#22c55e";
+    ctx.font = "800 18px Arial";
+    ctx.fillText("● ACTIVO", W / 2, y + 30);
+    y += badgeH + 55;
+
+    ctx.strokeStyle = "rgba(255,255,255,0.1)";
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+    y += 50;
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#5a6170";
+    ctx.font = "700 18px Arial";
+    ctx.fillText("COMPRADOR", pad, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#F2F2EF";
+    ctx.font = "700 20px Arial";
+    ctx.fillText(enmascararNombre(nombre), W - pad, y);
+    y += 42;
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#5a6170";
+    ctx.font = "700 18px Arial";
+    ctx.fillText("TELÉFONO", pad, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#F2F2EF";
+    ctx.font = "700 20px Arial";
+    ctx.fillText(enmascararTelefono(telefono), W - pad, y);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#5a6170";
+    ctx.font = "700 16px Arial";
+    ctx.fillText("HIRALDO POWER · SORTEO 100% VERIFICABLE", W / 2, H - pad);
+
+    cb(canvas.toDataURL("image/png"));
+  };
+
+  if (rifaImagen) {
+    const img = new Image();
+    img.onload = () => dibujarResto(img);
+    img.onerror = () => dibujarResto(null);
+    img.src = rifaImagen;
+  } else {
+    dibujarResto(null);
+  }
+}
+
 // Devuelve true si la fecha/hora del sorteo ya pasó (tiempo agotado)
 function sorteoVencido(fechaStr, hora) {
   if (!fechaStr) return false;
@@ -2363,6 +2518,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
    ============================================================ */
 function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, notifPermiso, pedirPermisoNotificaciones, onRefresh }) {
   const [avisoWhatsapp, setAvisoWhatsapp] = useState(null);
+  const [imgBoleto, setImgBoleto] = useState(null);
   const [emailLogin, setEmailLogin] = useState("");
   const [passLogin, setPassLogin] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -2510,6 +2666,26 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     showToast("Respaldo descargado ✓", "ok");
   };
 
+  // Limpieza de una sola vez: quita las capturas de pago guardadas en
+  // compras que ya fueron aprobadas hace tiempo (antes de que aprobar()
+  // las descartara automáticamente), para liberar espacio del documento de
+  // Firebase y que las compras nuevas dejen de fallar con "Error al guardar".
+  const limpiarCapturasAntiguas = async () => {
+    let huboCambios = false;
+    const limpios = pendientes.map(p => {
+      if (p.estado === "aprobado" && p.captura) {
+        huboCambios = true;
+        const { captura, ...resto } = p;
+        return resto;
+      }
+      return p;
+    });
+    if (!huboCambios) { showToast("No hay capturas antiguas que limpiar ✓", "ok"); return; }
+    const ok = await savePendientes(limpios);
+    if (ok === false) showToast("Error al limpiar. Intenta de nuevo.", "warn");
+    else showToast("Espacio liberado ✓ Las compras nuevas ya no deberían fallar.", "ok");
+  };
+
   const aprobar = async (p) => {
     const ticketsRef = doc(db, "hiraldopower", "tickets_" + p.rifaId);
     const pendRef = doc(db, "hiraldopower", "pending");
@@ -2536,7 +2712,18 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
           nextPool[num] = { nombre: p.nombre, telefono: p.telefono, fecha: p.fecha };
           asignados.push(num);
         }
-        const nextPend = pendActual.map(x => x.id === p.id ? { ...x, estado: "aprobado", asignados } : x);
+        // Al aprobar, se descarta la captura del pago (ya cumplió su función
+        // de validar la compra) para que el documento de compras no crezca
+        // sin límite — Firestore permite máximo 1 MB por documento, y como
+        // todas las compras pendientes y aprobadas viven en un solo
+        // documento, guardar la foto de cada una para siempre terminaba
+        // llenando ese límite y bloqueando las compras nuevas con "Error al
+        // guardar".
+        const nextPend = pendActual.map(x => {
+          if (x.id !== p.id) return x;
+          const { captura, ...resto } = x;
+          return { ...resto, estado: "aprobado", asignados };
+        });
         tx.set(ticketsRef, { value: JSON.stringify(nextPool) });
         tx.set(pendRef, { value: nextPend });
         nextPoolFinal = nextPool;
@@ -2595,6 +2782,16 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
       rifaTitulo: tituloRifa(p.rifaId),
       ganadoresPower: ganoPower ? ganadoresPower : []
     });
+
+    // Genera en paralelo la imagen del boleto (tarjeta profesional) para
+    // poder enviarla junto al mensaje de WhatsApp.
+    setImgBoleto(null);
+    const rifaObj = (rifas || []).find(r => r.id === p.rifaId);
+    generarImagenBoleto({
+      nombre: p.nombre, telefono: p.telefono, asignados,
+      rifaTitulo: tituloRifa(p.rifaId),
+      rifaImagen: rifaObj?.imagen || ""
+    }, (dataUrl) => setImgBoleto(dataUrl));
   };
 
   const rechazar = async (p) => {
@@ -2770,19 +2967,57 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
       {editando && <EditorRifa rifa={editando==="nueva"?null:editando} onGuardar={guardarRifa} onCancelar={()=>setEditando(null)} />}
 
       {avisoWhatsapp && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, padding:20 }}>
-          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:28, maxWidth:420, width:"100%" }}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, padding:20, overflowY:"auto" }}>
+          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:28, maxWidth:420, width:"100%", margin:"20px 0" }}>
             <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:17, marginBottom:6, display:"flex", alignItems:"center", gap:8 }}>
               <Check size={18} style={{ color:"#C6FF3D" }}/> Compra aprobada
             </h3>
-            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:18, lineHeight:1.5 }}>
-              Avisa a <strong style={{ color:"#F2F2EF" }}>{avisoWhatsapp.nombre}</strong> sus números con un solo toque:
+            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:14, lineHeight:1.5 }}>
+              Avisa a <strong style={{ color:"#F2F2EF" }}>{avisoWhatsapp.nombre}</strong> sus números con la imagen del boleto:
             </p>
+
+            <div style={{ width:"100%", aspectRatio:"5/7", background:"#0D0F12", borderRadius:12, overflow:"hidden", marginBottom:14, display:"flex", alignItems:"center", justifyContent:"center", border:"1px solid #232830" }}>
+              {imgBoleto
+                ? <img src={imgBoleto} alt="Boleto" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+                : <span style={{ color:"#5a6170", fontSize:12 }}>Generando imagen del boleto…</span>}
+            </div>
+
+            <button
+              disabled={!imgBoleto}
+              onClick={async ()=>{
+                const mensaje = mensajeAvisoNumeros(avisoWhatsapp, siteConfig);
+                const telefono = normalizarTelefono(avisoWhatsapp.telefono);
+                try {
+                  const res = await fetch(imgBoleto);
+                  const blob = await res.blob();
+                  const file = new File([blob], `boleto-${avisoWhatsapp.asignados[0]}.png`, { type: "image/png" });
+                  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], text: mensaje });
+                    setAvisoWhatsapp(null);
+                    return;
+                  }
+                } catch (e) { /* si falla o el usuario cancela, seguimos con el plan B */ }
+                // Plan B (computadora o navegador sin soporte para compartir
+                // archivos): descarga la imagen y abre WhatsApp con el texto
+                // listo — solo falta adjuntar la imagen ya descargada.
+                const a = document.createElement("a");
+                a.href = imgBoleto; a.download = `boleto-${avisoWhatsapp.asignados[0]}.png`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(mensaje)}`, "_blank");
+                setAvisoWhatsapp(null);
+              }}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background: imgBoleto ? "#25D366" : "#232830", color: imgBoleto ? "#0D0F12" : "#5a6170", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, border:"none", cursor: imgBoleto ? "pointer" : "default", width:"100%", marginBottom:8 }}>
+              Enviar por WhatsApp (con imagen)
+            </button>
+            <p style={{ fontSize:11, color:"#5a6170", marginBottom:14, lineHeight:1.5 }}>
+              En el celular esto abre el menú para compartir directo a WhatsApp con la imagen y el mensaje listos. Si no es posible, se descarga la imagen y se abre WhatsApp con el texto — solo adjunta ahí la imagen descargada.
+            </p>
+
             <a href={`https://wa.me/${normalizarTelefono(avisoWhatsapp.telefono)}?text=${encodeURIComponent(mensajeAvisoNumeros(avisoWhatsapp, siteConfig))}`}
               target="_blank" rel="noopener noreferrer"
               onClick={()=>setAvisoWhatsapp(null)}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"#25D366", color:"#0D0F12", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, textDecoration:"none", marginBottom:10 }}>
-              Enviar por WhatsApp
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"transparent", border:"1px solid #25D366", color:"#25D366", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, textDecoration:"none", marginBottom:10 }}>
+              Enviar solo el texto (sin imagen)
             </a>
             <button onClick={()=>setAvisoWhatsapp(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer", width:"100%" }}>
               Cerrar sin enviar
@@ -3498,6 +3733,18 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
           <p style={{ color:"#9AA1AC", fontSize:12, marginTop:16 }}>
             Este archivo es solo para guardar como copia de seguridad — no lo compartas públicamente, ya que incluye nombres y teléfonos de compradores.
           </p>
+
+          <div style={{ borderTop:"1px solid #232830", marginTop:24, paddingTop:24 }}>
+            <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:6, display:"flex", alignItems:"center", gap:8 }}>
+              <AlertCircle size={16} style={{ color:"#f59e0b" }} /> Liberar espacio (capturas antiguas)
+            </h3>
+            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:16, lineHeight:1.5 }}>
+              Cada compra guarda la foto del comprobante de pago. Firebase solo permite 1 MB en total para todas las compras juntas, así que después de muchas ventas aprobadas ese espacio se llena y las compras nuevas empiezan a fallar con "Error al guardar". Este botón descarga esas fotos de pago ya aprobadas (que ya no hacen falta) para liberar espacio. Es seguro — no borra ningún boleto, número ni venta, solo las fotos de compras que ya fueron aprobadas.
+            </p>
+            <button onClick={limpiarCapturasAntiguas} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"1px solid #f59e0b", color:"#f59e0b", fontWeight:800, fontSize:14, padding:"14px 22px", borderRadius:10, cursor:"pointer" }}>
+              <AlertCircle size={16}/> Liberar espacio ahora
+            </button>
+          </div>
         </div>
       )}
         </main>
