@@ -1410,7 +1410,10 @@ export default function App() {
       });
     } catch (e) {
       console.error("agregarPendiente error:", e);
-      return false;
+      // Devolvemos el error real (código/mensaje de Firebase) en vez de solo
+      // "false", para poder mostrarlo en pantalla y saber exactamente qué
+      // está fallando (documento lleno, permisos, conexión, etc.)
+      return { error: true, code: e.code || "", message: e.message || String(e) };
     }
     setPendientes(nextPendFinal);
     return true;
@@ -1902,8 +1905,9 @@ function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCoun
           onConfirm={async(datos)=>{
             const nuevo={id:"P"+Date.now(),...datos,cantidad:cantidadFinal,total,rifaId:rifa.id,rifaTitulo:rifa.titulo,fecha:new Date().toISOString(),estado:"pendiente"};
             const ok = await agregarPendiente(nuevo);
-            if(ok===false){
-              showToast("Error al guardar. Intenta de nuevo o contacta al organizador.","warn");
+            if(ok===false || (ok && ok.error)){
+              const detalle = ok && ok.error ? ` (${ok.code || ok.message})` : "";
+              showToast(`Error al guardar${detalle}. Intenta de nuevo o contacta al organizador.`,"warn");
               return;
             }
             setShowCheckout(false); setCantidad(minBol); setComboSel(null);
@@ -2519,6 +2523,7 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, notifPermiso, pedirPermisoNotificaciones, onRefresh }) {
   const [avisoWhatsapp, setAvisoWhatsapp] = useState(null);
   const [imgBoleto, setImgBoleto] = useState(null);
+  const [buscarBoleto, setBuscarBoleto] = useState("");
   const [emailLogin, setEmailLogin] = useState("");
   const [passLogin, setPassLogin] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -2984,22 +2989,14 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
 
             <button
               disabled={!imgBoleto}
-              onClick={async ()=>{
+              onClick={()=>{
                 const mensaje = mensajeAvisoNumeros(avisoWhatsapp, siteConfig);
                 const telefono = normalizarTelefono(avisoWhatsapp.telefono);
-                try {
-                  const res = await fetch(imgBoleto);
-                  const blob = await res.blob();
-                  const file = new File([blob], `boleto-${avisoWhatsapp.asignados[0]}.png`, { type: "image/png" });
-                  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], text: mensaje });
-                    setAvisoWhatsapp(null);
-                    return;
-                  }
-                } catch (e) { /* si falla o el usuario cancela, seguimos con el plan B */ }
-                // Plan B (computadora o navegador sin soporte para compartir
-                // archivos): descarga la imagen y abre WhatsApp con el texto
-                // listo — solo falta adjuntar la imagen ya descargada.
+                // Descarga la imagen al dispositivo (queda como la foto más
+                // reciente en la galería) y abre DIRECTO el chat de ese
+                // cliente en WhatsApp con el mensaje ya escrito — igual que
+                // antes. Solo falta tocar el clip 📎 en ese chat y adjuntar
+                // la imagen (va a ser la primera/más reciente de la galería).
                 const a = document.createElement("a");
                 a.href = imgBoleto; a.download = `boleto-${avisoWhatsapp.asignados[0]}.png`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -3007,18 +3004,31 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                 setAvisoWhatsapp(null);
               }}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background: imgBoleto ? "#25D366" : "#232830", color: imgBoleto ? "#0D0F12" : "#5a6170", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, border:"none", cursor: imgBoleto ? "pointer" : "default", width:"100%", marginBottom:8 }}>
-              Enviar por WhatsApp (con imagen)
+              Enviar por WhatsApp
             </button>
             <p style={{ fontSize:11, color:"#5a6170", marginBottom:14, lineHeight:1.5 }}>
-              En el celular esto abre el menú para compartir directo a WhatsApp con la imagen y el mensaje listos. Si no es posible, se descarga la imagen y se abre WhatsApp con el texto — solo adjunta ahí la imagen descargada.
+              Esto guarda la imagen en tu galería y abre directo el chat de {avisoWhatsapp.nombre} con el mensaje listo. Solo toca el clip 📎 y adjunta la imagen (va a ser la más reciente de tu galería).
             </p>
 
-            <a href={`https://wa.me/${normalizarTelefono(avisoWhatsapp.telefono)}?text=${encodeURIComponent(mensajeAvisoNumeros(avisoWhatsapp, siteConfig))}`}
-              target="_blank" rel="noopener noreferrer"
-              onClick={()=>setAvisoWhatsapp(null)}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"transparent", border:"1px solid #25D366", color:"#25D366", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, textDecoration:"none", marginBottom:10 }}>
-              Enviar solo el texto (sin imagen)
-            </a>
+            {!!(navigator.share) && (
+              <button
+                disabled={!imgBoleto}
+                onClick={async ()=>{
+                  const mensaje = mensajeAvisoNumeros(avisoWhatsapp, siteConfig);
+                  try {
+                    const res = await fetch(imgBoleto);
+                    const blob = await res.blob();
+                    const file = new File([blob], `boleto-${avisoWhatsapp.asignados[0]}.png`, { type: "image/png" });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                      await navigator.share({ files: [file], text: mensaje });
+                    }
+                  } catch (e) { /* el usuario canceló el menú de compartir */ }
+                }}
+                style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"transparent", border:"1px solid #232830", color:"#9AA1AC", fontWeight:700, fontSize:12, padding:"11px 18px", borderRadius:10, cursor: imgBoleto?"pointer":"default", width:"100%", marginBottom:10 }}>
+                O compartir a otro chat/app (eliges el contacto)
+              </button>
+            )}
+
             <button onClick={()=>setAvisoWhatsapp(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer", width:"100%" }}>
               Cerrar sin enviar
             </button>
@@ -3351,31 +3361,70 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
       {tabAdmin==="boletos" && (
         <div>
           {vendidosTodos.length>0 && (
-            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:18 }}>{vendidosTodos.length} boleto{vendidosTodos.length!==1?"s":""} vendido{vendidosTodos.length!==1?"s":""} en total. Toca la papelera para liberar un boleto (vuelve a quedar disponible para la venta).</p>
+            <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:14 }}>{vendidosTodos.length} boleto{vendidosTodos.length!==1?"s":""} vendido{vendidosTodos.length!==1?"s":""} en total. Toca la papelera para liberar un boleto (vuelve a quedar disponible para la venta).</p>
           )}
           {vendidosTodos.length===0 && <p style={{ color:"#9AA1AC", fontSize:13, padding:16 }}>Aún no hay boletos vendidos.</p>}
-          <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
-            {Object.entries(
-              vendidosTodos.reduce((acc,{rifaId,num,info})=>{ (acc[rifaId]=acc[rifaId]||[]).push([num,info]); return acc; },{})
-            ).map(([rifaId,items])=>{
-              const idx = rifas.findIndex(r=>r.id===rifaId);
-              const color = COLORES_RIFA[idx>=0?idx%COLORES_RIFA.length:0];
-              return (
-                <div key={rifaId}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-                    <span style={{ width:10, height:10, borderRadius:999, background:color, flexShrink:0 }} />
-                    <span style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color }}>{tituloRifa(rifaId)}</span>
-                    <span style={{ fontSize:11, color:"#9AA1AC" }}>· {items.length} boleto{items.length!==1?"s":""}</span>
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:1, background:"#232830", borderRadius:10, overflow:"hidden", borderLeft:`3px solid ${color}` }}>
-                    {items.map(([num,info])=>(
-                      <BoletoVendidoRow key={num} num={num} info={info} onEliminar={()=>liberarBoleto(rifaId,num)} />
-                    ))}
-                  </div>
+
+          {vendidosTodos.length>0 && (() => {
+            const q = buscarBoleto.trim().toLowerCase();
+            const qDigitos = buscarBoleto.replace(/\D/g, "");
+            const filtrados = !q ? vendidosTodos : vendidosTodos.filter(({num,info}) => {
+              const porNumero = String(num).toLowerCase().includes(q);
+              const porNombre = (info.nombre || "").toLowerCase().includes(q);
+              const porTelefono = qDigitos && (info.telefono || "").replace(/\D/g,"").includes(qDigitos);
+              return porNumero || porNombre || porTelefono;
+            });
+            return (
+              <>
+                <div style={{ position:"relative", marginBottom:18 }}>
+                  <input
+                    type="text"
+                    value={buscarBoleto}
+                    onChange={e=>setBuscarBoleto(e.target.value)}
+                    placeholder="Buscar por número, nombre o teléfono…"
+                    style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"12px 14px", borderRadius:10, fontSize:14, outline:"none", boxSizing:"border-box" }}
+                  />
+                  {buscarBoleto && (
+                    <button onClick={()=>setBuscarBoleto("")} style={{ position:"absolute", top:"50%", right:10, transform:"translateY(-50%)", background:"none", border:"none", color:"#9AA1AC", cursor:"pointer", display:"flex" }}>
+                      <X size={16}/>
+                    </button>
+                  )}
                 </div>
-              );
-            })}
-          </div>
+
+                {q && (
+                  <p style={{ color:"#9AA1AC", fontSize:12, marginBottom:14 }}>
+                    {filtrados.length} resultado{filtrados.length!==1?"s":""} para "{buscarBoleto}"
+                  </p>
+                )}
+                {q && filtrados.length===0 && (
+                  <p style={{ color:"#9AA1AC", fontSize:13, padding:16 }}>No se encontró ningún boleto con esos datos.</p>
+                )}
+
+                <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
+                  {Object.entries(
+                    filtrados.reduce((acc,{rifaId,num,info})=>{ (acc[rifaId]=acc[rifaId]||[]).push([num,info]); return acc; },{})
+                  ).map(([rifaId,items])=>{
+                    const idx = rifas.findIndex(r=>r.id===rifaId);
+                    const color = COLORES_RIFA[idx>=0?idx%COLORES_RIFA.length:0];
+                    return (
+                      <div key={rifaId}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                          <span style={{ width:10, height:10, borderRadius:999, background:color, flexShrink:0 }} />
+                          <span style={{ fontFamily:"'Arial Black',sans-serif", fontSize:13, color }}>{tituloRifa(rifaId)}</span>
+                          <span style={{ fontSize:11, color:"#9AA1AC" }}>· {items.length} boleto{items.length!==1?"s":""}</span>
+                        </div>
+                        <div style={{ display:"flex", flexDirection:"column", gap:1, background:"#232830", borderRadius:10, overflow:"hidden", borderLeft:`3px solid ${color}` }}>
+                          {items.map(([num,info])=>(
+                            <BoletoVendidoRow key={num} num={num} info={info} onEliminar={()=>liberarBoleto(rifaId,num)} />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
