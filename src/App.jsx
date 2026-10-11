@@ -131,6 +131,7 @@ const SITE_CONFIG_INICIAL = {
   mensajeWhatsapp: MENSAJE_WHATSAPP_INICIAL,
   codigoEfectivo: "0000",
   whatsappNumero: "18293108799",
+  whatsappApp: "business",
 };
 
 
@@ -196,6 +197,20 @@ function normalizarTelefono(tel) {
   const digitos = (tel || "").replace(/\D/g, "");
   if (digitos.length === 10) return "1" + digitos;
   return digitos;
+}
+
+// Link para abrir el chat de un cliente y enviarle el mensaje. Si el admin
+// eligió "WhatsApp Business" y está en Android, se usa un enlace que fuerza
+// abrir esa app (así el mensaje sale desde el número de WhatsApp Business y
+// no desde el WhatsApp normal). En cualquier otro caso, el enlace wa.me normal.
+function urlEnvioWhatsapp(telefono, mensaje, siteConfig) {
+  const tel = normalizarTelefono(telefono);
+  const normal = `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`;
+  const esAndroid = typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+  if (siteConfig?.whatsappApp === "business" && esAndroid) {
+    return `intent://send/?phone=${tel}&text=${encodeURIComponent(mensaje)}#Intent;scheme=whatsapp;package=com.whatsapp.w4b;S.browser_fallback_url=${encodeURIComponent(normal)};end`;
+  }
+  return normal;
 }
 
 // Arma el mensaje de agradecimiento + números asignados que el admin envía
@@ -2992,7 +3007,6 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
               disabled={!imgBoleto}
               onClick={()=>{
                 const mensaje = mensajeAvisoNumeros(avisoWhatsapp, siteConfig);
-                const telefono = normalizarTelefono(avisoWhatsapp.telefono);
                 // Descarga la imagen al dispositivo (queda como la foto más
                 // reciente en la galería) y abre DIRECTO el chat de ese
                 // cliente en WhatsApp con el mensaje ya escrito — igual que
@@ -3001,7 +3015,9 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                 const a = document.createElement("a");
                 a.href = imgBoleto; a.download = `boleto-${avisoWhatsapp.asignados[0]}.png`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(mensaje)}`, "_blank");
+                const url = urlEnvioWhatsapp(avisoWhatsapp.telefono, mensaje, siteConfig);
+                if (url.startsWith("intent:")) setTimeout(()=>{ window.location.href = url; }, 400);
+                else window.open(url, "_blank");
                 setAvisoWhatsapp(null);
               }}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background: imgBoleto ? "#25D366" : "#232830", color: imgBoleto ? "#0D0F12" : "#5a6170", fontWeight:800, fontSize:14, padding:"14px 20px", borderRadius:10, border:"none", cursor: imgBoleto ? "pointer" : "default", width:"100%", marginBottom:8 }}>
@@ -3711,6 +3727,15 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             <input value={formSitio.whatsappNumero || ""} onChange={e=>setFormSitio(f=>({...f,whatsappNumero:e.target.value}))} placeholder="Ej: 809-555-1234"
               style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }} />
             <span style={{ display:"block", fontSize:11, color:"#5a6170", marginTop:6 }}>Escribe el número nuevo con código de área (10 dígitos). Recuerda presionar "Guardar cambios" abajo.</span>
+          </label>
+
+          <label style={{ display:"block", marginBottom:20 }}>
+            <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>App de WhatsApp para enviar boletos a los clientes (desde tu celular Android)</span>
+            <select value={formSitio.whatsappApp || "business"} onChange={e=>setFormSitio(f=>({...f,whatsappApp:e.target.value}))}
+              style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" }}>
+              <option value="business">WhatsApp Business (número nuevo)</option>
+              <option value="normal">WhatsApp normal</option>
+            </select>
           </label>
 
           <div style={{ borderTop:"1px solid #232830", paddingTop:20, marginTop:6, marginBottom:20 }}>
