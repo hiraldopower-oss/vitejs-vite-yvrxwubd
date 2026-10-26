@@ -262,12 +262,16 @@ function roundRect(ctx, x, y, w, h, r) {
 // portada la incluye arriba; si el comprador tiene varios números los
 // acomoda en una cuadrícula en vez de un solo número gigante.
 function generarImagenBoleto({ nombre, telefono, asignados, rifaTitulo, rifaImagen }, cb) {
-  const W = 1000, H = 1400;
+  const W = 1000;
+  let H = 1400;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
 
-  const dibujarResto = (imgPortada) => {
+  // Se dibuja dos veces: la primera solo para medir cuánto espacio ocupa el
+  // contenido, y la segunda con el alto justo (sin espacio vacío abajo).
+  const dibujarResto = (imgPortada, altoFinal) => {
+    canvas.height = H;
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, "#111827");
     grad.addColorStop(1, "#05070A");
@@ -368,12 +372,17 @@ function generarImagenBoleto({ nombre, telefono, asignados, rifaTitulo, rifaImag
     ctx.font = "700 20px Arial";
     ctx.fillText(enmascararTelefono(telefono), W - pad, y);
 
+    if (!altoFinal) { H = Math.max(900, y + 120); dibujarResto(imgPortada, true); return; }
+
     ctx.textAlign = "center";
     ctx.fillStyle = "#5a6170";
     ctx.font = "700 16px Arial";
     ctx.fillText("HIRALDO POWER · SORTEO 100% VERIFICABLE", W / 2, H - pad);
 
-    cb(canvas.toDataURL("image/png"));
+    let url;
+    try { url = canvas.toDataURL("image/png"); }
+    catch { if (imgPortada) { H = 1400; dibujarResto(null); return; } throw new Error("No se pudo crear la imagen"); }
+    cb(url);
   };
 
   if (rifaImagen) {
@@ -384,6 +393,408 @@ function generarImagenBoleto({ nombre, telefono, asignados, rifaTitulo, rifaImag
   } else {
     dibujarResto(null);
   }
+}
+
+// Generador de códigos QR (modo byte, corrección de errores nivel M,
+// versiones 1 a 10). Hecho a mano para no agregar librerías nuevas al
+// proyecto. Basado en el algoritmo estándar (ISO/IEC 18004).
+// Devuelve una matriz de true (negro) / false (blanco).
+function generarMatrizQR(texto) {
+  const datos = Array.from(new TextEncoder().encode(texto));
+  const ECC_POR_BLOQUE = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
+  const NUM_BLOQUES = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
+  const modulosDatos = (v) => {
+    let r = (16 * v + 128) * v + 64;
+    if (v >= 2) { const n = Math.floor(v / 7) + 2; r -= (25 * n - 10) * n - 55; if (v >= 7) r -= 36; }
+    return r;
+  };
+  const capacidad = (v) => Math.floor(modulosDatos(v) / 8) - ECC_POR_BLOQUE[v] * NUM_BLOQUES[v];
+
+  let ver = 1;
+  for (; ver <= 10; ver++) {
+    const bitsConteo = ver <= 9 ? 8 : 16;
+    if (4 + bitsConteo + datos.length * 8 <= capacidad(ver) * 8) break;
+  }
+  if (ver > 10) throw new Error("Texto demasiado largo para el QR");
+  const size = ver * 4 + 17;
+
+  // --- Bits de datos ---
+  const bits = [];
+  const poner = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+  poner(4, 4);
+  poner(datos.length, ver <= 9 ? 8 : 16);
+  datos.forEach(b => poner(b, 8));
+  const capBits = capacidad(ver) * 8;
+  poner(0, Math.min(4, capBits - bits.length));
+  poner(0, (8 - bits.length % 8) % 8);
+  for (let pad = 0xEC; bits.length < capBits; pad ^= 0xEC ^ 0x11) poner(pad, 8);
+  const cw = [];
+  for (let i = 0; i < bits.length; i += 8) cw.push(parseInt(bits.slice(i, i + 8).join(""), 2));
+
+  // --- Reed-Solomon ---
+  const mul = (x, y) => {
+    let z = 0;
+    for (let i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11D); z ^= ((y >>> i) & 1) * x; }
+    return z;
+  };
+  const grado = ECC_POR_BLOQUE[ver];
+  const divisor = new Array(grado).fill(0); divisor[grado - 1] = 1;
+  let raiz = 1;
+  for (let i = 0; i < grado; i++) {
+    for (let j = 0; j < grado; j++) { divisor[j] = mul(divisor[j], raiz); if (j + 1 < grado) divisor[j] ^= divisor[j + 1]; }
+    raiz = mul(raiz, 0x02);
+  }
+  const resto = (dat) => {
+    const r = new Array(grado).fill(0);
+    dat.forEach(b => { const f = b ^ r.shift(); r.push(0); divisor.forEach((c, i) => { r[i] ^= mul(c, f); }); });
+    return r;
+  };
+  const numBloques = NUM_BLOQUES[ver];
+  const totalCw = Math.floor(modulosDatos(ver) / 8);
+  const numCortos = numBloques - totalCw % numBloques;
+  const largoCorto = Math.floor(totalCw / numBloques);
+  const bloques = [];
+  for (let i = 0, k = 0; i < numBloques; i++) {
+    const dat = cw.slice(k, k + largoCorto - grado + (i < numCortos ? 0 : 1));
+    k += dat.length;
+    const ecc = resto(dat);
+    if (i < numCortos) dat.push(0);
+    bloques.push(dat.concat(ecc));
+  }
+  const final = [];
+  for (let i = 0; i < bloques[0].length; i++)
+    bloques.forEach((b, j) => { if (i !== largoCorto - grado || j >= numCortos) final.push(b[i]); });
+
+  // --- Matriz y patrones fijos ---
+  const mod = Array.from({ length: size }, () => new Array(size).fill(false));
+  const fijo = Array.from({ length: size }, () => new Array(size).fill(false));
+  const fijar = (x, y, negro) => { mod[y][x] = negro; fijo[y][x] = true; };
+  for (let i = 0; i < size; i++) { fijar(6, i, i % 2 === 0); fijar(i, 6, i % 2 === 0); }
+  [[3, 3], [size - 4, 3], [3, size - 4]].forEach(([cx, cy]) => {
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const d = Math.max(Math.abs(dx), Math.abs(dy)), x = cx + dx, y = cy + dy;
+      if (x >= 0 && x < size && y >= 0 && y < size) fijar(x, y, d !== 2 && d !== 4);
+    }
+  });
+  if (ver > 1) {
+    const n = Math.floor(ver / 7) + 2;
+    const paso = Math.ceil((ver * 4 + 4) / (n * 2 - 2)) * 2;
+    const pos = [6];
+    for (let p = size - 7; pos.length < n; p -= paso) pos.splice(1, 0, p);
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      if ((i === 0 && j === 0) || (i === 0 && j === n - 1) || (i === n - 1 && j === 0)) continue;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++)
+        fijar(pos[i] + dx, pos[j] + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+    }
+  }
+  const bitDe = (v, i) => ((v >>> i) & 1) !== 0;
+  const dibujarFormato = (mascara) => {
+    const d = (0 << 3) | mascara; // nivel M = 0
+    let r = d;
+    for (let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537);
+    const b = ((d << 10) | r) ^ 0x5412;
+    for (let i = 0; i <= 5; i++) fijar(8, i, bitDe(b, i));
+    fijar(8, 7, bitDe(b, 6)); fijar(8, 8, bitDe(b, 7)); fijar(7, 8, bitDe(b, 8));
+    for (let i = 9; i < 15; i++) fijar(14 - i, 8, bitDe(b, i));
+    for (let i = 0; i < 8; i++) fijar(size - 1 - i, 8, bitDe(b, i));
+    for (let i = 8; i < 15; i++) fijar(8, size - 15 + i, bitDe(b, i));
+    fijar(8, size - 8, true);
+  };
+  dibujarFormato(0);
+  if (ver >= 7) {
+    let r = ver;
+    for (let i = 0; i < 12; i++) r = (r << 1) ^ ((r >>> 11) * 0x1F25);
+    const b = (ver << 12) | r;
+    for (let i = 0; i < 18; i++) {
+      const a = size - 11 + i % 3, c = Math.floor(i / 3);
+      fijar(a, c, bitDe(b, i)); fijar(c, a, bitDe(b, i));
+    }
+  }
+
+  // --- Colocar los datos ---
+  let i = 0;
+  for (let der = size - 1; der >= 1; der -= 2) {
+    if (der === 6) der = 5;
+    for (let v = 0; v < size; v++) for (let j = 0; j < 2; j++) {
+      const x = der - j, sube = ((der + 1) & 2) === 0, y = sube ? size - 1 - v : v;
+      if (!fijo[y][x] && i < final.length * 8) { mod[y][x] = bitDe(final[i >>> 3], 7 - (i & 7)); i++; }
+    }
+  }
+
+  // --- Elegir la mejor máscara (la que deja el código más fácil de leer) ---
+  const cond = [
+    (x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, (x) => x % 3 === 0, (x, y) => (x + y) % 3 === 0,
+    (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0, (x, y) => x * y % 2 + x * y % 3 === 0,
+    (x, y) => (x * y % 2 + x * y % 3) % 2 === 0, (x, y) => ((x + y) % 2 + x * y % 3) % 2 === 0,
+  ];
+  const aplicar = (m) => {
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++)
+      if (!fijo[y][x] && cond[m](x, y)) mod[y][x] = !mod[y][x];
+  };
+  const penalidad = () => {
+    let p = 0, negros = 0;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      if (mod[y][x]) negros++;
+      if (x < size - 1 && y < size - 1) {
+        const c = mod[y][x];
+        if (c === mod[y][x + 1] && c === mod[y + 1][x] && c === mod[y + 1][x + 1]) p += 3;
+      }
+    }
+    for (let a = 0; a < size; a++) {
+      for (const fila of [true, false]) {
+        let run = 1;
+        for (let b = 1; b <= size; b++) {
+          const igual = b < size && (fila ? mod[a][b] === mod[a][b - 1] : mod[b][a] === mod[b - 1][a]);
+          if (igual) run++;
+          else { if (run >= 5) p += run - 2; run = 1; }
+        }
+        const linea = Array.from({ length: size }, (_, b) => (fila ? mod[a][b] : mod[b][a]) ? 1 : 0).join("");
+        p += 40 * ((linea.match(/(?=10111010000)/g) || []).length + (linea.match(/(?=00001011101)/g) || []).length);
+      }
+    }
+    p += Math.floor(Math.abs(negros * 20 - size * size * 10) / (size * size)) * 10;
+    return p;
+  };
+  let mejor = 0, mejorP = Infinity;
+  for (let m = 0; m < 8; m++) {
+    aplicar(m); dibujarFormato(m);
+    const pen = penalidad();
+    if (pen < mejorP) { mejorP = pen; mejor = m; }
+    aplicar(m);
+  }
+  aplicar(mejor); dibujarFormato(mejor);
+  return mod;
+}
+
+
+/* ============================================================
+   TARJETAS QR — boletos impresos de un solo uso
+   ============================================================ */
+
+// Dirección fija que llevan los QR impresos (con "www" para evitar el aviso
+// de conexión no privada que sale en algunos teléfonos sin el "www").
+const DOMINIO_QR = "https://www.hiraldopower.com";
+
+// Código secreto de cada tarjeta: 16 bytes al azar (imposible de adivinar).
+function codigoAleatorioTarjeta() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let bin = "";
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// En Firebase solo se guarda la "huella" (hash SHA-256) del código, nunca el
+// código mismo. Así, aunque alguien lea la base de datos, no puede sacar
+// códigos válidos de ahí.
+async function huellaCodigo(codigo) {
+  const datos = new TextEncoder().encode(codigo);
+  const hash = await crypto.subtle.digest("SHA-256", datos);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+const etiquetaTarjeta = (num) => "T-" + String(num || 0).padStart(4, "0");
+
+// Escribe texto en el canvas partiéndolo en varias líneas si no cabe.
+function textoEnLineas(ctx, texto, x, y, anchoMax, altoLinea, maxLineas) {
+  const palabras = String(texto || "").split(" ");
+  const lineas = [];
+  let actual = "";
+  palabras.forEach(p => {
+    const prueba = actual ? actual + " " + p : p;
+    if (ctx.measureText(prueba).width > anchoMax && actual) { lineas.push(actual); actual = p; }
+    else actual = prueba;
+  });
+  if (actual) lineas.push(actual);
+  const finales = lineas.slice(0, maxLineas || lineas.length);
+  finales.forEach((l, i) => ctx.fillText(l, x, y + i * altoLinea));
+  return y + finales.length * altoLinea;
+}
+
+// Carga la foto de portada de la rifa para ponerla en las tarjetas. Si no
+// se puede usar (no hay foto, o es un enlace de otra página que no permite
+// copiarla), devuelve null y las tarjetas salen sin foto.
+function cargarImagenPortada(src) {
+  return new Promise(resolve => {
+    if (!src) { resolve(null); return; }
+    const img = new Image();
+    if (!src.startsWith("data:")) img.crossOrigin = "anonymous";
+    img.onload = () => {
+      // ¿Es una imagen redonda sobre fondo negro (como un logo circular)?
+      // Si las 4 esquinas son negras, se recorta en círculo para que no
+      // salgan esquinas negras en la tarjeta.
+      try {
+        const c = document.createElement("canvas");
+        c.width = 40; c.height = 40;
+        const cx = c.getContext("2d");
+        cx.drawImage(img, 0, 0, 40, 40);
+        const esquinas = [[1, 1], [38, 1], [1, 38], [38, 38]].map(([x, y]) => cx.getImageData(x, y, 1, 1).data);
+        const centro = cx.getImageData(20, 20, 1, 1).data;
+        const negro = (d) => d[0] < 25 && d[1] < 25 && d[2] < 25 && d[3] > 200;
+        img.esRedonda = esquinas.every(negro) && !negro(centro) && Math.abs(img.width - img.height) < img.width * 0.05;
+      } catch { img.esRedonda = false; }
+      resolve(img);
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+// Dibuja las hojas para imprimir: tamaño carta (8.5 x 11 pulgadas a 150 ppp),
+// 8 tarjetas por hoja (2 columnas x 4 filas) con líneas punteadas para cortar.
+// Si hay foto de la rifa, va arriba a la derecha de cada tarjeta.
+// Devuelve una lista de imágenes PNG (una por hoja).
+function dibujarHojasTarjetas(tarjetas, rifaTitulo, foto) {
+  try { return dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto); }
+  catch (e) {
+    // Si la foto no se deja copiar al archivo, se repite sin foto
+    if (foto) return dibujarHojasTarjetasCon(tarjetas, rifaTitulo, null);
+    throw e;
+  }
+}
+function dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto) {
+  const W = 1275, H = 1650, margen = 45, gap = 30, cols = 2, filas = 4;
+  const cardW = Math.floor((W - margen * 2 - gap * (cols - 1)) / cols);
+  const cardH = Math.floor((H - margen * 2 - gap * (filas - 1)) / filas);
+  const porHoja = cols * filas;
+  const hojas = [];
+  for (let inicio = 0; inicio < tarjetas.length; inicio += porHoja) {
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, W, H);
+    tarjetas.slice(inicio, inicio + porHoja).forEach((t, i) => {
+      const x = margen + (i % cols) * (cardW + gap);
+      const y = margen + Math.floor(i / cols) * (cardH + gap);
+
+      // Borde punteado para cortar
+      ctx.save();
+      ctx.setLineDash([10, 8]); ctx.strokeStyle = "#9AA1AC"; ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, cardW, cardH);
+      ctx.restore();
+
+      // Franja de color a la izquierda
+      ctx.fillStyle = "#0D1B2A"; ctx.fillRect(x + 2, y + 2, 10, cardH - 4);
+      ctx.fillStyle = "#C6FF3D"; ctx.fillRect(x + 12, y + 2, 4, cardH - 4);
+
+      // Código QR (con su margen blanco obligatorio alrededor)
+      const qrBox = cardH - 40;
+      const matriz = generarMatrizQR(`${DOMINIO_QR}/?t=${t.codigo}`);
+      const n = matriz.length + 8;
+      const px = Math.floor(qrBox / n);
+      const qrX = x + 28 + Math.floor((qrBox - px * n) / 2) + px * 4;
+      const qrY = y + 20 + Math.floor((qrBox - px * n) / 2) + px * 4;
+      ctx.fillStyle = "#000000";
+      matriz.forEach((fila, fy) => fila.forEach((negro, fx) => {
+        if (negro) ctx.fillRect(qrX + fx * px, qrY + fy * px, px, px);
+      }));
+
+      // Textos a la derecha
+      const tx = x + 28 + qrBox + 14;
+      const anchoTexto = x + cardW - 16 - tx;
+      ctx.textAlign = "left";
+      if (foto) {
+        // Foto completa (sin recortar), centrada en su recuadro
+        const fw = anchoTexto, fh = 160, fx = tx, fy = y + 12;
+        const esc = Math.min(fw / foto.width, fh / foto.height);
+        const iw = foto.width * esc, ih = foto.height * esc;
+        const ix = fx + (fw - iw) / 2, iy = fy + (fh - ih) / 2;
+        ctx.save();
+        ctx.beginPath();
+        if (foto.esRedonda) ctx.arc(ix + iw / 2, iy + ih / 2, Math.min(iw, ih) / 2 - 1, 0, Math.PI * 2);
+        else if (ctx.roundRect) ctx.roundRect(ix, iy, iw, ih, 8);
+        else ctx.rect(ix, iy, iw, ih);
+        ctx.clip();
+        ctx.drawImage(foto, ix, iy, iw, ih);
+        ctx.restore();
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#0D1B2A";
+        ctx.font = "900 17px Arial";
+        ctx.fillText("HIRALDO POWER", tx, y + 194);
+        ctx.fillStyle = "#4B5563";
+        ctx.font = "700 13px Arial";
+        textoEnLineas(ctx, (rifaTitulo || "").toUpperCase(), tx, y + 212, anchoTexto, 16, 1);
+        ctx.fillStyle = "#0D1B2A";
+        ctx.font = "900 50px Arial";
+        ctx.fillText(String(t.cantidad), tx, y + 264);
+        const anchoNum = ctx.measureText(String(t.cantidad)).width;
+        ctx.font = "900 21px Arial";
+        ctx.fillText(t.cantidad === 1 ? "BOLETO" : "BOLETOS", tx + anchoNum + 8, y + 262);
+        if (t.total) {
+          ctx.fillStyle = "#0D1B2A";
+          ctx.font = "900 20px Arial";
+          ctx.fillText("Precio: " + fmtMoney(t.total), tx, y + 288);
+        }
+        ctx.fillStyle = "#4B5563";
+        ctx.font = "600 13px Arial";
+        textoEnLineas(ctx, "Escanea y registra tus datos.", tx, y + (t.total ? 308 : 288), anchoTexto, 16, t.total ? 1 : 2);
+        ctx.fillStyle = "#0D1B2A";
+        ctx.font = "800 16px Arial";
+        ctx.fillText("Tarjeta " + etiquetaTarjeta(t.num), tx, y + cardH - 34);
+        ctx.fillStyle = "#6B7280";
+        ctx.font = "600 12px Arial";
+        ctx.fillText("Válida una sola vez", tx, y + cardH - 17);
+        return;
+      }
+      ctx.fillStyle = "#0D1B2A";
+      ctx.font = "900 20px Arial";
+      ctx.fillText("HIRALDO POWER", tx, y + 48);
+      ctx.fillStyle = "#4B5563";
+      ctx.font = "700 17px Arial";
+      let yy = textoEnLineas(ctx, (rifaTitulo || "").toUpperCase(), tx, y + 76, anchoTexto, 21, 2);
+      ctx.fillStyle = "#0D1B2A";
+      ctx.font = "900 92px Arial";
+      ctx.fillText(String(t.cantidad), tx, yy + 82);
+      ctx.font = "900 24px Arial";
+      ctx.fillText(t.cantidad === 1 ? "BOLETO" : "BOLETOS", tx, yy + 112);
+      ctx.fillStyle = "#4B5563";
+      ctx.font = "600 15px Arial";
+      if (t.total) {
+        ctx.fillStyle = "#0D1B2A";
+        ctx.font = "900 20px Arial";
+        ctx.fillText("Precio: " + fmtMoney(t.total), tx, yy + 140);
+        ctx.fillStyle = "#4B5563";
+        ctx.font = "600 15px Arial";
+        yy = textoEnLineas(ctx, "Escanea y registra tus datos.", tx, yy + 164, anchoTexto, 19, 2);
+      } else {
+        yy = textoEnLineas(ctx, "Escanea el código y registra tu nombre y teléfono.", tx, yy + 142, anchoTexto, 19, 3);
+      }
+      ctx.fillStyle = "#0D1B2A";
+      ctx.font = "800 17px Arial";
+      ctx.fillText("Tarjeta " + etiquetaTarjeta(t.num), tx, y + cardH - 44);
+      ctx.fillStyle = "#6B7280";
+      ctx.font = "600 13px Arial";
+      ctx.fillText("Válida una sola vez", tx, y + cardH - 24);
+    });
+    hojas.push(canvas.toDataURL("image/png"));
+  }
+  return hojas;
+}
+
+// Números que ya están apartados para compras con tarjeta QR que todavía
+// esperan aprobación. Nadie más puede recibir esos números mientras tanto.
+function numerosReservados(pendientes, rifaId, excluirId) {
+  const set = new Set();
+  (pendientes || []).forEach(p => {
+    if (p.estado === "pendiente" && p.rifaId === rifaId && p.id !== excluirId && Array.isArray(p.reservados))
+      p.reservados.forEach(n => set.add(n));
+  });
+  return set;
+}
+
+// Guarda cambios en la lista de tarjetas de forma segura: lee la versión más
+// reciente de Firebase y aplica el cambio encima (para no pisar tarjetas que
+// se marcaron como usadas desde otro dispositivo).
+async function actualizarTarjetasQR(cambio) {
+  const ref = doc(db, "hiraldopower", "tarjetasQR");
+  let final = null;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const actual = snap.exists() ? (snap.data().value || []) : [];
+    final = cambio(actual);
+    tx.set(ref, { value: final });
+  });
+  return final;
 }
 
 // Devuelve true si la fecha/hora del sorteo ya pasó (tiempo agotado)
@@ -507,7 +918,7 @@ function maskTelefono(tel) {
   if (d.length < 6) return tel || "———";
   return d.slice(0, 4) + "****" + d.slice(-2);
 }
-function TicketCard({ numero, info, rifa }) {
+function TicketCard({ numero, info, rifa, apartado }) {
   const etiqueta = rifa?.titulo || "Rifa";
   return (
     <div style={{ background: "linear-gradient(180deg,#0c1730 0%,#152647 100%)", border: "1px solid rgba(96,165,250,0.18)", borderRadius: 16, overflow: "hidden", boxShadow: "0 6px 20px rgba(0,0,0,0.35)" }}>
@@ -537,8 +948,8 @@ function TicketCard({ numero, info, rifa }) {
         </div>
       </div>
       <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", padding: "9px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-        <span style={{ width: 6, height: 6, borderRadius: 999, background: "#22c55e", display: "inline-block" }} />
-        <span style={{ fontSize: 11, color: "#22c55e", fontWeight: 700 }}>Activo</span>
+        <span style={{ width: 6, height: 6, borderRadius: 999, background: apartado ? "#f59e0b" : "#22c55e", display: "inline-block" }} />
+        <span style={{ fontSize: 11, color: apartado ? "#f59e0b" : "#22c55e", fontWeight: 700 }}>{apartado ? "Apartado · por confirmar" : "Activo"}</span>
       </div>
     </div>
   );
@@ -595,7 +1006,7 @@ function Verify({ boletos, pendientes, rifas }) {
             <div style={{ display:"flex", gap:12, background:"#14171C", border:"1px solid rgba(255,107,53,0.3)", borderRadius:12, padding:16 }}>
               <Clock size={18} style={{ color:"#FF6B35", flexShrink:0 }} />
               <div><div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>Pendientes de validación</div>
-                {resultado.pendientes.map(p=><div key={p.id} style={{ fontSize:12, color:"#9AA1AC" }}>{p.cantidad} boleto{p.cantidad>1?"s":""} de {p.rifaTitulo||"rifa"} · {fmtMoney(p.total)}</div>)}
+                {resultado.pendientes.map(p=><div key={p.id} style={{ fontSize:12, color:"#9AA1AC" }}>{p.cantidad} boleto{p.cantidad>1?"s":""} de {p.rifaTitulo||"rifa"} · {fmtMoney(p.total)}{Array.isArray(p.reservados) && p.reservados.length>0 && <div style={{ color:"#f59e0b", fontWeight:700, marginTop:3 }}>Números apartados: {p.reservados.join(", ")}</div>}</div>)}
               </div>
             </div>
           )}
@@ -1354,6 +1765,12 @@ export default function App() {
   const [powerNumbers, setPowerNumbers] = useState(POWER_NUMBERS_INICIAL);
   const [premiosPower, setPremiosPower] = useState([]);
   const [gastosRifas, setGastosRifas] = useState({});
+  const [tarjetasQR, setTarjetasQR] = useState([]);
+  // Código de tarjeta QR si la persona entró escaneando una tarjeta impresa
+  // (la dirección trae "?t=CODIGO").
+  const [codigoTarjeta] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("t") || ""; } catch { return ""; }
+  });
   const [toast, setToast] = useState(null);
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
 
@@ -1376,8 +1793,10 @@ export default function App() {
       const pn = await load("powerNumbers", POWER_NUMBERS_INICIAL);
       const pp = await load("premiosPower", []);
       const gr = await load("gastosRifas", {});
+      const tq = await load("tarjetasQR", []);
       setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp); setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
-      setPowerNumbers(pn); setPremiosPower(pp); setGastosRifas(gr);
+      setPowerNumbers(pn); setPremiosPower(pp); setGastosRifas(gr); setTarjetasQR(tq);
+      if (codigoTarjeta) setView("tarjeta");
       setReady(true);
     })();
   }, []);
@@ -1420,7 +1839,33 @@ export default function App() {
     try {
       await runTransaction(db, async (tx) => {
         const snap = await tx.get(pendRef);
+        // Para las tarjetas QR también se lee la lista de boletos de la rifa,
+        // para apartarle al cliente sus números en ese mismo momento.
+        const poolSnap = nuevaCompra.tarjetaH ? await tx.get(doc(db, "hiraldopower", "tickets_" + nuevaCompra.rifaId)) : null;
+        // Si la compra viene de una tarjeta QR, se revisa en el mismo paso
+        // (sin posibilidad de que dos personas la usen a la vez) que la
+        // tarjeta exista, sea de esta rifa y cantidad, y no se haya usado.
+        if (nuevaCompra.tarjetaH) {
+          const tSnap = await tx.get(doc(db, "hiraldopower", "tarjetasQR"));
+          const lista = tSnap.exists() ? (tSnap.data().value || []) : [];
+          const t = lista.find(x => x.h === nuevaCompra.tarjetaH);
+          if (!t || t.rifaId !== nuevaCompra.rifaId || t.cantidad !== nuevaCompra.cantidad) throw new Error("TARJETA_INVALIDA");
+          if (t.usada) throw new Error("TARJETA_USADA");
+        }
         const pendActual = snap.exists() ? (snap.data().value || []) : [];
+        if (nuevaCompra.tarjetaH && pendActual.some(x => x.tarjetaH === nuevaCompra.tarjetaH)) throw new Error("TARJETA_USADA");
+        if (nuevaCompra.tarjetaH) {
+          // Se eligen los números al azar entre los libres (sin vender y sin
+          // apartar para otra tarjeta) y quedan apartados para este cliente.
+          const raw = poolSnap && poolSnap.exists() ? poolSnap.data().value : null;
+          const pool = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+          const apartados = numerosReservados(pendActual, nuevaCompra.rifaId);
+          const libres = Object.keys(pool).filter(k => !pool[k] && !apartados.has(k));
+          if (libres.length < nuevaCompra.cantidad) throw new Error("SIN_DISPONIBLES");
+          const elegidos = [];
+          for (let i = 0; i < nuevaCompra.cantidad; i++) elegidos.push(libres.splice(Math.floor(Math.random() * libres.length), 1)[0]);
+          nuevaCompra = { ...nuevaCompra, reservados: elegidos.sort() };
+        }
         nextPendFinal = [...pendActual, nuevaCompra];
         tx.set(pendRef, { value: nextPendFinal });
       });
@@ -1432,7 +1877,7 @@ export default function App() {
       return { error: true, code: e.code || "", message: e.message || String(e) };
     }
     setPendientes(nextPendFinal);
-    return true;
+    return nuevaCompra.tarjetaH ? { ok: true, reservados: nuevaCompra.reservados } : true;
   };
 
   const vendidosPorRifa = (rifaId) => Object.values(boletos[rifaId]||{}).filter(Boolean).length;
@@ -1453,6 +1898,8 @@ export default function App() {
       const pn = await dbGet("powerNumbers", POWER_NUMBERS_INICIAL);
       const pp = await dbGet("premiosPower", []);
       const gr = await dbGet("gastosRifas", {});
+      const tq = await dbGet("tarjetasQR", []);
+      setTarjetasQR(tq);
       setPendientes(p);
       setBoletos(b);
       setHistorial(h);
@@ -1748,6 +2195,12 @@ export default function App() {
           metodosPago={metodosPago} siteConfig={siteConfig} />
       )}
 
+      {view==="tarjeta" && (
+        <CanjeTarjeta codigo={codigoTarjeta} rifas={rifas} vendidosPorRifa={vendidosPorRifa}
+          agregarPendiente={agregarPendiente}
+          onSalir={()=>{ try { window.history.replaceState(null, "", "/"); } catch {} setView("catalogo"); }} />
+      )}
+
       {view==="verify" && <Verify boletos={boletos} pendientes={pendientes} rifas={rifas} />}
       {view==="ganadores" && <Ganadores historial={historial} />}
       {view==="terminos" && <TerminosCondiciones siteConfig={siteConfig} onVolver={()=>setView("catalogo")} />}
@@ -1762,6 +2215,7 @@ export default function App() {
           powerNumbers={powerNumbers} savePowerNumbers={pn=>save("powerNumbers",pn,setPowerNumbers)}
           premiosPower={premiosPower} savePremiosPower={pp=>save("premiosPower",pp,setPremiosPower)} setPremiosPowerLocal={setPremiosPower}
           gastosRifas={gastosRifas} saveGastosRifas={gr=>save("gastosRifas",gr,setGastosRifas)}
+          tarjetasQR={tarjetasQR} setTarjetasQRLocal={setTarjetasQR}
           notifPermiso={notifPermiso} pedirPermisoNotificaciones={pedirPermisoNotificaciones}
           onRefresh={refreshFromFirebase} />
       )}
@@ -1805,6 +2259,194 @@ export default function App() {
 }
 
 /* ---- Vista detalle / compra ---- */
+/* ============================================================
+   CANJE DE TARJETA QR — lo que ve el cliente al escanear
+   ============================================================ */
+function CanjeTarjeta({ codigo, rifas, vendidosPorRifa, agregarPendiente, onSalir }) {
+  // estado: cargando | error | invalida | usada | cerrada | agotada | form | listo
+  const [estado, setEstado] = useState("cargando");
+  const [tarjeta, setTarjeta] = useState(null);
+  const [huella, setHuella] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [apellido, setApellido] = useState("");
+  const [telefono, setTelefono] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [aviso, setAviso] = useState("");
+  const [numeros, setNumeros] = useState([]);
+  const [imgBoleto, setImgBoleto] = useState(null);
+
+  const rifa = tarjeta ? rifas.find(r => r.id === tarjeta.rifaId) : null;
+
+  const revisar = async () => {
+    setEstado("cargando");
+    try {
+      if (!codigo || !window.crypto?.subtle) { setEstado("invalida"); return; }
+      const h = await huellaCodigo(codigo);
+      setHuella(h);
+      const [tSnap, pSnap] = await Promise.all([
+        getDoc(doc(db, "hiraldopower", "tarjetasQR")),
+        getDoc(doc(db, "hiraldopower", "pending")),
+      ]);
+      const lista = tSnap.exists() ? (tSnap.data().value || []) : [];
+      const pend = pSnap.exists() ? (pSnap.data().value || []) : [];
+      const t = lista.find(x => x.h === h);
+      if (!t) { setEstado("invalida"); return; }
+      setTarjeta(t);
+      if (t.usada || pend.some(x => x.tarjetaH === h)) { setEstado("usada"); return; }
+      const r = rifas.find(x => x.id === t.rifaId);
+      if (!r || !r.activa || sorteoVencido(r.fechaSorteo, r.horaSorteo || "23:59")) { setEstado("cerrada"); return; }
+      const reservado = pend.filter(x => x.rifaId === r.id && x.estado === "pendiente").reduce((s, x) => s + (x.cantidad || 0), 0);
+      const disponibles = r.totalBoletos - vendidosPorRifa(r.id) - reservado;
+      if (disponibles < t.cantidad) { setEstado("agotada"); return; }
+      setEstado("form");
+    } catch (e) {
+      console.error("canje tarjeta error:", e);
+      setEstado("error");
+    }
+  };
+  useEffect(() => { revisar(); }, []);
+
+  const telDigitos = telefono.replace(/\D/g, "");
+  const valido = nombre.trim().length >= 2 && apellido.trim().length >= 2 && telDigitos.length >= 10;
+
+  const confirmar = async () => {
+    if (!valido || enviando || !tarjeta || !rifa) return;
+    setEnviando(true); setAviso("");
+    const nueva = {
+      id: "P" + Date.now(),
+      nombre: `${nombre.trim()} ${apellido.trim()}`,
+      telefono: telefono.trim(),
+      metodo: "Tarjeta QR (pagada en persona)",
+      captura: "",
+      cantidad: tarjeta.cantidad,
+      total: tarjeta.cantidad * (rifa.precio || 0),
+      rifaId: rifa.id,
+      rifaTitulo: rifa.titulo,
+      fecha: new Date().toISOString(),
+      estado: "pendiente",
+      tarjetaH: huella,
+      tarjetaNum: tarjeta.num,
+      vendedor: tarjeta.vendedor || "",
+    };
+    const r = await agregarPendiente(nueva);
+    setEnviando(false);
+    if (r && r.ok) {
+      setNumeros(r.reservados || []);
+      setImgBoleto(null);
+      try {
+        generarImagenBoleto({
+          nombre: nueva.nombre, telefono: nueva.telefono, asignados: r.reservados || [],
+          rifaTitulo: rifa.titulo, rifaImagen: rifa.imagen || "",
+        }, (url) => setImgBoleto(url));
+      } catch (e) { console.error("imagen boleto error:", e); }
+      setEstado("listo");
+      try { window.history.replaceState(null, "", "/"); } catch {}
+      return;
+    }
+    if (r && r.error && (r.message === "TARJETA_USADA")) { setEstado("usada"); return; }
+    if (r && r.error && (r.message === "SIN_DISPONIBLES")) { setEstado("agotada"); return; }
+    if (r && r.error && (r.message === "TARJETA_INVALIDA")) { setEstado("invalida"); return; }
+    setAviso("No se pudo registrar. Revisa tu conexión e intenta de nuevo.");
+  };
+
+  const caja = { background:"#14171C", border:"1px solid #232830", borderRadius:16, padding:"28px 22px", textAlign:"center" };
+  const titulo = { fontFamily:"'Arial Black',sans-serif", fontSize:18, marginBottom:8 };
+  const texto = { color:"#9AA1AC", fontSize:14, lineHeight:1.6 };
+  const botonVolver = (
+    <button onClick={onSalir} style={{ marginTop:20, background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"13px 22px", borderRadius:10, cursor:"pointer" }}>
+      Ver las rifas
+    </button>
+  );
+  const mensaje = (color, t, d, reintentar) => (
+    <div style={caja}>
+      <AlertCircle size={34} style={{ color, marginBottom:10 }} />
+      <div style={{ ...titulo, color }}>{t}</div>
+      <p style={texto}>{d}</p>
+      {reintentar && (
+        <button onClick={revisar} style={{ marginTop:16, marginRight:8, background:"transparent", border:"1px solid #333", color:"#F2F2EF", fontWeight:700, fontSize:13, padding:"12px 18px", borderRadius:10, cursor:"pointer" }}>Intentar de nuevo</button>
+      )}
+      {botonVolver}
+    </div>
+  );
+  const inp = (label, val, set, ph, type="text") => (
+    <label style={{ display:"block", marginBottom:14, textAlign:"left" }}>
+      <span style={{ display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 }}>{label}</span>
+      <input type={type} value={val} onChange={e=>set(e.target.value)} placeholder={ph}
+        style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"13px 12px", borderRadius:9, fontSize:16, outline:"none" }} />
+    </label>
+  );
+
+  return (
+    <main style={{ maxWidth:480, margin:"0 auto", padding:"32px 16px 60px" }}>
+      {estado === "cargando" && (
+        <div style={caja}>
+          <Zap size={30} style={{ color:"#C6FF3D", marginBottom:10 }} />
+          <p style={texto}>Revisando tu tarjeta…</p>
+        </div>
+      )}
+      {estado === "error" && mensaje("#f59e0b", "No pudimos revisar la tarjeta", "Puede ser la conexión a internet. Intenta de nuevo en un momento.", true)}
+      {estado === "invalida" && mensaje("#FF5470", "Tarjeta no válida", "Este código no corresponde a ninguna tarjeta activa. Si la compraste, comunícate con el organizador.")}
+      {estado === "usada" && mensaje("#FF5470", "Esta tarjeta ya fue usada", "Los boletos de esta tarjeta ya se registraron. Cada tarjeta se puede usar una sola vez. Si crees que es un error, comunícate con el organizador.")}
+      {estado === "cerrada" && mensaje("#FF5470", "Esta rifa ya no admite registros", "El periodo de venta de esta rifa terminó. Comunícate con el organizador.")}
+      {estado === "agotada" && mensaje("#FF5470", "No quedan boletos suficientes", "En este momento no quedan suficientes boletos para esta tarjeta. Comunícate con el organizador.")}
+
+      {estado === "form" && tarjeta && rifa && (
+        <div style={caja}>
+          {rifa.imagen && (
+            <img src={rifa.imagen} alt={rifa.titulo} style={{ width:"100%", maxHeight:200, objectFit:"cover", borderRadius:12, marginBottom:16 }} />
+          )}
+          <div style={{ fontSize:12, fontWeight:800, letterSpacing:"1px", color:"#9AA1AC" }}>TARJETA {etiquetaTarjeta(tarjeta.num)}</div>
+          <div style={{ ...titulo, marginTop:6 }}>{rifa.titulo}</div>
+          <div style={{ display:"inline-block", background:"rgba(198,255,61,0.08)", border:"1px solid rgba(198,255,61,0.35)", borderRadius:12, padding:"10px 22px", margin:"6px 0 20px" }}>
+            <span style={{ fontFamily:"'Arial Black',sans-serif", fontSize:30, color:"#C6FF3D" }}>{tarjeta.cantidad}</span>
+            <span style={{ fontSize:13, color:"#F2F2EF", fontWeight:700, marginLeft:8 }}>boleto{tarjeta.cantidad>1?"s":""}</span>
+            {rifa.precio > 0 && <div style={{ fontSize:12, color:"#9AA1AC", marginTop:2 }}>Valor: {fmtMoney(tarjeta.cantidad * rifa.precio)}</div>}
+          </div>
+          <p style={{ ...texto, fontSize:13, marginBottom:18 }}>Escribe tus datos para registrar tus boletos. Los números se asignan al azar y te llegan por WhatsApp cuando se confirme.</p>
+          {inp("Nombre *", nombre, setNombre, "Tu nombre")}
+          {inp("Apellido *", apellido, setApellido, "Tu apellido")}
+          {inp("Teléfono (WhatsApp) *", telefono, setTelefono, "809-000-0000", "tel")}
+          {aviso && <p style={{ color:"#f59e0b", fontSize:13, marginBottom:12 }}>{aviso}</p>}
+          <button onClick={confirmar} disabled={!valido || enviando}
+            style={{ width:"100%", background: valido && !enviando ? "#C6FF3D" : "#232830", color: valido && !enviando ? "#0D0F12" : "#5a6170", border:"none", fontWeight:800, fontSize:15, padding:"15px 20px", borderRadius:10, cursor: valido && !enviando ? "pointer" : "default" }}>
+            {enviando ? "Registrando…" : "Registrar mis boletos"}
+          </button>
+        </div>
+      )}
+
+      {estado === "listo" && tarjeta && (
+        <div>
+          <div style={{ textAlign:"center", marginBottom:16 }}>
+            <Check size={36} style={{ color:"#C6FF3D", marginBottom:6 }} />
+            <div style={titulo}>¡Listo, {nombre.trim()}! Estos son tus números</div>
+            <p style={{ ...texto, fontSize:13 }}>Descarga tu boleto o tómale captura de pantalla. También puedes verlo en "Verificar boleto" con tu teléfono.</p>
+          </div>
+          {imgBoleto ? (
+            <>
+              <img src={imgBoleto} alt="Tu boleto" style={{ width:"100%", borderRadius:16, display:"block" }} />
+              <button onClick={()=>{
+                  const a = document.createElement("a");
+                  a.href = imgBoleto; a.download = `mi-boleto-${(numeros[0] || "hiraldo-power")}.png`;
+                  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                }}
+                style={{ width:"100%", marginTop:14, background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:15, padding:"15px 20px", borderRadius:10, cursor:"pointer" }}>
+                Descargar mi boleto
+              </button>
+            </>
+          ) : (
+            <div style={{ ...caja }}>
+              <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:26, color:"#C6FF3D", letterSpacing:1 }}>
+                {numeros.map(n => "#" + n).join("  ")}
+              </div>
+            </div>
+          )}
+          <div style={{ textAlign:"center" }}>{botonVolver}</div>
+        </div>
+      )}
+    </main>
+  );
+}
+
 function RifaDetalle({ rifa, agregarPendiente, showToast, onVolver, vendidosCount, reservadoPendiente, metodosPago, siteConfig }) {
   const minBol = Math.max(1, rifa.minBoletos || 1);
   // Los boletos disponibles descuentan tanto los ya vendidos (aprobados) como
@@ -2534,9 +3176,345 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 }
 
 /* ============================================================
+   ADMIN — TARJETAS QR (crear, imprimir y controlar)
+   ============================================================ */
+function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, showToast }) {
+  const rifasActivas = rifas.filter(r => r.activa);
+  const [rifaId, setRifaId] = useState(rifasActivas[0]?.id || "");
+  const [cantidadSel, setCantidadSel] = useState("5");
+  const [cantidadOtra, setCantidadOtra] = useState("");
+  const [cuantas, setCuantas] = useState("2");
+  const [vendedor, setVendedor] = useState("");
+  const [generando, setGenerando] = useState(false);
+  const [hojas, setHojas] = useState(null);
+  const [confirmLote, setConfirmLote] = useState(null);
+  // Foto especial para las tarjetas de cada rifa (si no hay, se usa la
+  // portada de la rifa). Se guarda aparte en Firebase: "tarjetasFoto".
+  const [fotos, setFotos] = useState({});
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
+  const fotoRef = useRef(null);
+  useEffect(() => {
+    getDoc(doc(db, "hiraldopower", "tarjetasFoto"))
+      .then(snap => { if (snap.exists()) setFotos(snap.data().value || {}); })
+      .catch(() => {});
+  }, []);
+  const guardarFotos = async (nuevas) => {
+    try {
+      await setDoc(doc(db, "hiraldopower", "tarjetasFoto"), { value: nuevas });
+      setFotos(nuevas);
+      return true;
+    } catch (e) {
+      console.error("guardar foto tarjetas error:", e);
+      showToast("No se pudo guardar la foto. Intenta de nuevo.", "warn");
+      return false;
+    }
+  };
+  const subirFoto = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !rifaId) return;
+    setSubiendoFoto(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = async () => {
+        const max = 600;
+        const esc = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * esc); c.height = Math.round(img.height * esc);
+        const cx = c.getContext("2d");
+        cx.fillStyle = "#FFFFFF"; cx.fillRect(0, 0, c.width, c.height);
+        cx.drawImage(img, 0, 0, c.width, c.height);
+        const ok = await guardarFotos({ ...fotos, [rifaId]: c.toDataURL("image/jpeg", 0.85) });
+        if (ok) showToast("Foto de las tarjetas guardada ✓", "ok");
+        setSubiendoFoto(false);
+      };
+      img.onerror = () => { setSubiendoFoto(false); showToast("No se pudo leer esa imagen.", "warn"); };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  const quitarFoto = async () => {
+    const nuevas = { ...fotos };
+    delete nuevas[rifaId];
+    if (await guardarFotos(nuevas)) showToast("Se usará la portada de la rifa.", "ok");
+  };
+
+  const rifa = rifas.find(r => r.id === rifaId);
+  const cantidad = cantidadSel === "otra" ? parseInt(cantidadOtra, 10) : parseInt(cantidadSel, 10);
+  const numCuantas = parseInt(cuantas, 10);
+  const lista = tarjetasQR || [];
+
+  // Estado de cada tarjeta: "usada" (compra aprobada), "registrada" (el
+  // cliente ya la escaneó y está pendiente de aprobar) o "libre".
+  const hRegistradas = new Set((pendientes || []).filter(p => p.tarjetaH && p.estado === "pendiente").map(p => p.tarjetaH));
+  const estadoDe = (t) => t.usada ? "usada" : hRegistradas.has(t.h) ? "registrada" : "libre";
+
+  const generar = async () => {
+    if (!rifa) { showToast("Elige una rifa activa.", "warn"); return; }
+    const minBol = Math.max(1, rifa.minBoletos || 1);
+    if (!Number.isInteger(cantidad) || cantidad < minBol) { showToast(`Cada tarjeta debe tener al menos ${minBol} boleto${minBol>1?"s":""}.`, "warn"); return; }
+    if (!Number.isInteger(numCuantas) || numCuantas < 1 || numCuantas > 80) { showToast("Puedes crear entre 1 y 80 tarjetas a la vez.", "warn"); return; }
+    if (!window.crypto?.subtle) { showToast("Este navegador no permite crear tarjetas. Usa Chrome.", "warn"); return; }
+    setGenerando(true);
+    try {
+      const lote = "L" + Date.now();
+      const nuevas = [];
+      for (let i = 0; i < numCuantas; i++) {
+        const codigo = codigoAleatorioTarjeta();
+        nuevas.push({ codigo, h: await huellaCodigo(codigo) });
+      }
+      let asignadas = [];
+      const final = await actualizarTarjetasQR(actual => {
+        if (actual.length + nuevas.length > 4000) throw new Error("LIMITE");
+        const maxNum = actual.reduce((m, x) => Math.max(m, x.num || 0), 0);
+        asignadas = nuevas.map((n, i) => ({ ...n, num: maxNum + 1 + i }));
+        const creada = new Date().toISOString();
+        return [...actual, ...asignadas.map(a => ({
+          h: a.h, num: a.num, rifaId: rifa.id, cantidad, vendedor: vendedor.trim(), lote, creada, usada: false,
+        }))];
+      });
+      setTarjetasQRLocal(final);
+      const foto = await cargarImagenPortada(fotos[rifa.id] || rifa.imagen);
+      const paginas = dibujarHojasTarjetas(asignadas.map(a => ({ codigo: a.codigo, num: a.num, cantidad, total: cantidad * (rifa.precio || 0) })), rifa.titulo, foto);
+      setHojas({ paginas, desde: asignadas[0].num, hasta: asignadas[asignadas.length - 1].num });
+      showToast(`${asignadas.length} tarjeta${asignadas.length>1?"s":""} creada${asignadas.length>1?"s":""} ✓ Descarga las hojas ahora.`, "ok");
+    } catch (e) {
+      console.error("generar tarjetas error:", e);
+      if (e.message === "LIMITE") showToast("Llegaste al máximo de tarjetas guardadas. Elimina lotes viejos sin usar.", "warn");
+      else showToast("No se pudieron crear las tarjetas. Intenta de nuevo.", "warn");
+    }
+    setGenerando(false);
+  };
+
+  const descargarHoja = (url, i) => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tarjetas-${etiquetaTarjeta(hojas.desde)}-a-${etiquetaTarjeta(hojas.hasta)}-hoja${i + 1}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  // Elimina las tarjetas de un lote que nadie ha usado ni registrado (por
+  // ejemplo, si no se imprimieron o se perdieron). Las usadas se conservan.
+  const eliminarLibres = async (lote) => {
+    try {
+      const tarjetasRef = doc(db, "hiraldopower", "tarjetasQR");
+      const pendRef = doc(db, "hiraldopower", "pending");
+      let final = null, borradas = 0;
+      await runTransaction(db, async (tx) => {
+        const tSnap = await tx.get(tarjetasRef);
+        const pSnap = await tx.get(pendRef);
+        const actual = tSnap.exists() ? (tSnap.data().value || []) : [];
+        const pend = pSnap.exists() ? (pSnap.data().value || []) : [];
+        const enUso = new Set(pend.filter(p => p.tarjetaH).map(p => p.tarjetaH));
+        final = actual.filter(t => !(t.lote === lote && !t.usada && !enUso.has(t.h)));
+        borradas = actual.length - final.length;
+        tx.set(tarjetasRef, { value: final });
+      });
+      setTarjetasQRLocal(final);
+      showToast(`${borradas} tarjeta${borradas!==1?"s":""} sin usar eliminada${borradas!==1?"s":""} ✓`, "ok");
+    } catch (e) {
+      console.error("eliminar tarjetas error:", e);
+      showToast("No se pudieron eliminar. Intenta de nuevo.", "warn");
+    }
+    setConfirmLote(null);
+  };
+
+  // Agrupar por lote para la lista
+  const lotes = Object.values(lista.reduce((acc, t) => {
+    const l = acc[t.lote] || (acc[t.lote] = { lote: t.lote, rifaId: t.rifaId, cantidad: t.cantidad, vendedor: t.vendedor, creada: t.creada, tarjetas: [] });
+    l.tarjetas.push(t);
+    return acc;
+  }, {})).sort((a, b) => new Date(b.creada) - new Date(a.creada));
+
+  // Resumen por vendedor (solo tarjetas ya aprobadas) — útil para comisiones
+  const porVendedor = Object.values(lista.filter(t => t.usada).reduce((acc, t) => {
+    const k = t.vendedor || "Sin vendedor";
+    const v = acc[k] || (acc[k] = { vendedor: k, tarjetas: 0, boletos: 0 });
+    v.tarjetas += 1; v.boletos += t.cantidad;
+    return acc;
+  }, {})).sort((a, b) => b.boletos - a.boletos);
+
+  const campo = { width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" };
+  const etiqueta = { display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 };
+  const tituloRifaDe = (id) => rifas.find(r => r.id === id)?.titulo || "Rifa eliminada";
+
+  return (
+    <div style={{ maxWidth:820 }}>
+      {/* CREAR */}
+      <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:24, marginBottom:20 }}>
+        <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:6 }}>Crear tarjetas para imprimir</h3>
+        <p style={{ color:"#9AA1AC", fontSize:13, lineHeight:1.5, marginBottom:18 }}>
+          Cada tarjeta trae un QR de un solo uso con una cantidad fija de boletos. El cliente la escanea, pone su nombre y teléfono, y la compra te llega como pendiente. Cóbrale al entregarle la tarjeta, y aprueba la compra solo si ya te pagó.
+        </p>
+        {rifasActivas.length === 0 ? (
+          <p style={{ color:"#f59e0b", fontSize:13 }}>No hay rifas activas. Activa una rifa para crear tarjetas.</p>
+        ) : (
+          <>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:14, marginBottom:14 }}>
+              <label>
+                <span style={etiqueta}>Rifa</span>
+                <select value={rifaId} onChange={e=>setRifaId(e.target.value)} style={campo}>
+                  {rifasActivas.map(r => <option key={r.id} value={r.id}>{r.titulo}</option>)}
+                </select>
+              </label>
+              <label>
+                <span style={etiqueta}>Boletos por tarjeta</span>
+                <select value={cantidadSel} onChange={e=>setCantidadSel(e.target.value)} style={campo}>
+                  <option value="5">5 boletos</option>
+                  <option value="10">10 boletos</option>
+                  <option value="otra">Otra cantidad</option>
+                </select>
+              </label>
+              {cantidadSel === "otra" && (
+                <label>
+                  <span style={etiqueta}>Cantidad</span>
+                  <input type="number" min="1" value={cantidadOtra} onChange={e=>setCantidadOtra(e.target.value)} placeholder="Ej: 20" style={campo} />
+                </label>
+              )}
+              <label>
+                <span style={etiqueta}>¿Cuántas tarjetas?</span>
+                <input type="number" min="1" max="80" value={cuantas} onChange={e=>setCuantas(e.target.value)} style={campo} />
+              </label>
+              <label>
+                <span style={etiqueta}>Vendedor (opcional)</span>
+                <input value={vendedor} onChange={e=>setVendedor(e.target.value)} placeholder="Ej: Juan" style={campo} />
+              </label>
+            </div>
+            {rifa && (
+              <div style={{ display:"flex", alignItems:"center", gap:14, background:"#0D0F12", border:"1px solid #232830", borderRadius:10, padding:12, marginBottom:14, flexWrap:"wrap" }}>
+                <div style={{ width:72, height:72, borderRadius:8, background:"#14171C", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  {(fotos[rifa.id] || rifa.imagen)
+                    ? <img src={fotos[rifa.id] || rifa.imagen} alt="" style={{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain" }} />
+                    : <ImagePlus size={20} style={{ color:"#5a6170" }} />}
+                </div>
+                <div style={{ flex:1, minWidth:160 }}>
+                  <div style={{ fontSize:13, fontWeight:700 }}>Foto de las tarjetas</div>
+                  <div style={{ fontSize:11, color:"#9AA1AC", marginTop:3, lineHeight:1.5 }}>
+                    {fotos[rifa.id] ? "Foto especial para las tarjetas de esta rifa." : rifa.imagen ? "Se usa la portada de la rifa. Puedes subir otra solo para las tarjetas." : "Sin foto. Puedes subir una para las tarjetas."}
+                  </div>
+                  <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap" }}>
+                    <input ref={fotoRef} type="file" accept="image/*" onChange={subirFoto} style={{ display:"none" }} />
+                    <button onClick={()=>fotoRef.current?.click()} disabled={subiendoFoto}
+                      style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #333", color:"#F2F2EF", fontWeight:700, fontSize:12, padding:"7px 12px", borderRadius:8, cursor:"pointer" }}>
+                      <ImagePlus size={13}/> {subiendoFoto ? "Guardando…" : fotos[rifa.id] ? "Cambiar foto" : "Subir foto"}
+                    </button>
+                    {fotos[rifa.id] && (
+                      <button onClick={quitarFoto} style={{ background:"none", border:"1px solid rgba(255,84,112,0.3)", color:"#FF5470", fontWeight:700, fontSize:12, padding:"7px 12px", borderRadius:8, cursor:"pointer" }}>
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            {rifa && Number.isInteger(cantidad) && cantidad > 0 && (
+              <p style={{ fontSize:12, color:"#9AA1AC", marginBottom:14 }}>
+                Cada tarjeta vale {fmtMoney(cantidad * (rifa.precio || 0))} ({cantidad} × {fmtMoney(rifa.precio || 0)}).
+              </p>
+            )}
+            <button onClick={generar} disabled={generando}
+              style={{ display:"flex", alignItems:"center", gap:8, background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:14, padding:"13px 20px", borderRadius:10, cursor: generando ? "default" : "pointer", opacity: generando ? 0.6 : 1 }}>
+              <Plus size={16}/> {generando ? "Creando…" : "Crear tarjetas"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* HOJAS RECIÉN CREADAS */}
+      {hojas && (
+        <div style={{ background:"#14171C", border:"1px solid rgba(198,255,61,0.35)", borderRadius:14, padding:24, marginBottom:20 }}>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:6 }}>
+            Tarjetas {etiquetaTarjeta(hojas.desde)} a {etiquetaTarjeta(hojas.hasta)} listas
+          </h3>
+          <div style={{ display:"flex", gap:8, background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:9, padding:"10px 12px", fontSize:12, color:"#f59e0b", marginBottom:16, lineHeight:1.5 }}>
+            <AlertCircle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+            Descarga las hojas ahora. Por seguridad, los códigos no se guardan en la página: si cierras esta pantalla sin descargarlas, ya no se pueden volver a imprimir (en ese caso, elimina ese lote y crea otro).
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))", gap:14 }}>
+            {hojas.paginas.map((url, i) => (
+              <div key={i} style={{ background:"#0D0F12", border:"1px solid #232830", borderRadius:10, padding:10 }}>
+                <img src={url} alt={`Hoja ${i+1}`} style={{ width:"100%", borderRadius:6, background:"#fff" }} />
+                <button onClick={()=>descargarHoja(url, i)}
+                  style={{ width:"100%", marginTop:8, background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:12, padding:"10px 0", borderRadius:8, cursor:"pointer" }}>
+                  Descargar hoja {i+1}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize:11, color:"#5a6170", marginTop:12, lineHeight:1.5 }}>
+            Imprime en papel tamaño carta, al 100% (sin "ajustar"), y recorta por las líneas punteadas. Antes de imprimir muchas, prueba escanear una.
+          </p>
+          <button onClick={()=>setHojas(null)} style={{ marginTop:12, background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:12, padding:"10px 16px", borderRadius:9, cursor:"pointer" }}>
+            Ya las descargué, cerrar
+          </button>
+        </div>
+      )}
+
+      {/* RESUMEN POR VENDEDOR */}
+      {porVendedor.length > 0 && (
+        <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:20, marginBottom:20 }}>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:12 }}>Vendido con tarjetas (aprobadas)</h3>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {porVendedor.map(v => (
+              <div key={v.vendedor} style={{ display:"flex", justifyContent:"space-between", fontSize:13, background:"#0D0F12", borderRadius:8, padding:"9px 12px" }}>
+                <span style={{ fontWeight:700 }}>{v.vendedor}</span>
+                <span style={{ color:"#9AA1AC" }}>{v.tarjetas} tarjeta{v.tarjetas!==1?"s":""} · <strong style={{ color:"#C6FF3D" }}>{v.boletos} boletos</strong></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* LOTES */}
+      <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:12 }}>Tarjetas creadas</h3>
+      {lotes.length === 0 && <p style={{ color:"#9AA1AC", fontSize:13 }}>Todavía no has creado tarjetas.</p>}
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {lotes.map(l => {
+          const usadas = l.tarjetas.filter(t => estadoDe(t) === "usada").length;
+          const registradas = l.tarjetas.filter(t => estadoDe(t) === "registrada").length;
+          const libres = l.tarjetas.length - usadas - registradas;
+          const nums = l.tarjetas.map(t => t.num);
+          return (
+            <div key={l.lote} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:16 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+                <div>
+                  <div style={{ fontWeight:800, fontSize:14 }}>{etiquetaTarjeta(Math.min(...nums))} a {etiquetaTarjeta(Math.max(...nums))}</div>
+                  <div style={{ fontSize:12, color:"#9AA1AC", marginTop:3 }}>
+                    {tituloRifaDe(l.rifaId)} · {l.cantidad} boletos c/u{l.vendedor ? ` · Vendedor: ${l.vendedor}` : ""}
+                  </div>
+                  <div style={{ fontSize:11, color:"#5a6170", marginTop:3 }}>Creadas {new Date(l.creada).toLocaleString("es-DO")}</div>
+                </div>
+                <div style={{ fontSize:12, textAlign:"right", lineHeight:1.7 }}>
+                  <div><strong style={{ color:"#C6FF3D" }}>{usadas}</strong> <span style={{ color:"#9AA1AC" }}>aprobadas</span></div>
+                  <div><strong style={{ color:"#f59e0b" }}>{registradas}</strong> <span style={{ color:"#9AA1AC" }}>por aprobar</span></div>
+                  <div><strong>{libres}</strong> <span style={{ color:"#9AA1AC" }}>sin usar</span></div>
+                </div>
+              </div>
+              {libres > 0 && confirmLote !== l.lote && (
+                <button onClick={()=>setConfirmLote(l.lote)}
+                  style={{ marginTop:12, display:"flex", alignItems:"center", gap:6, background:"none", border:"1px solid rgba(255,84,112,0.3)", color:"#FF5470", fontWeight:700, fontSize:12, padding:"8px 12px", borderRadius:8, cursor:"pointer" }}>
+                  <Trash2 size={13}/> Eliminar las {libres} sin usar
+                </button>
+              )}
+              {confirmLote === l.lote && (
+                <div style={{ marginTop:12 }}>
+                  <ConfirmInline mensaje={`¿Eliminar las ${libres} tarjetas sin usar de este lote? Sus QR dejarán de funcionar. Las ya usadas no se tocan.`}
+                    onSi={()=>eliminarLibres(l.lote)} onNo={()=>setConfirmLote(null)} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    ADMIN PANEL
    ============================================================ */
-function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, notifPermiso, pedirPermisoNotificaciones, onRefresh }) {
+function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendientes, setPendientesLocal, showToast, ganador, saveGanador, historial, saveHistorial, vendidosPorRifa, rifas, saveRifas, metodosPago, saveMetodosPago, siteConfig, saveSiteConfig, powerNumbers, savePowerNumbers, premiosPower, savePremiosPower, setPremiosPowerLocal, gastosRifas, saveGastosRifas, tarjetasQR, setTarjetasQRLocal, notifPermiso, pedirPermisoNotificaciones, onRefresh }) {
   const [avisoWhatsapp, setAvisoWhatsapp] = useState(null);
   const [imgBoleto, setImgBoleto] = useState(null);
   const [buscarBoleto, setBuscarBoleto] = useState("");
@@ -2675,7 +3653,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     const respaldo = {
       fechaRespaldo: new Date().toISOString(),
       rifas, boletos, pendientes, ganador, historial,
-      metodosPago, siteConfig, powerNumbers, premiosPower, gastosRifas
+      metodosPago, siteConfig, powerNumbers, premiosPower, gastosRifas, tarjetasQR
     };
     const blob = new Blob([JSON.stringify(respaldo, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2710,24 +3688,47 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
   const aprobar = async (p) => {
     const ticketsRef = doc(db, "hiraldopower", "tickets_" + p.rifaId);
     const pendRef = doc(db, "hiraldopower", "pending");
+    const tarjetasRef = doc(db, "hiraldopower", "tarjetasQR");
     let asignados = [];
     let nextPoolFinal = null;
     let nextPendFinal = null;
+    let nextTarjetasFinal = null;
     try {
       await runTransaction(db, async (tx) => {
         const ticketsSnap = await tx.get(ticketsRef);
         const pendSnap = await tx.get(pendRef);
+        // Compra hecha con tarjeta QR: se confirma que la tarjeta es real,
+        // de esta rifa y cantidad, y que no se usó en otra compra. Al aprobar
+        // queda marcada como usada para siempre.
+        let tarjetasNext = null;
+        if (p.tarjetaH) {
+          const tSnap = await tx.get(tarjetasRef);
+          const lista = tSnap.exists() ? (tSnap.data().value || []) : [];
+          const t = lista.find(x => x.h === p.tarjetaH);
+          if (!t || t.rifaId !== p.rifaId || t.cantidad !== p.cantidad) throw new Error("TARJETA_INVALIDA");
+          if (t.usada && t.compraId !== p.id) throw new Error("TARJETA_USADA");
+          tarjetasNext = lista.map(x => x.h === p.tarjetaH ? { ...x, usada: true, compraId: p.id, usadaFecha: new Date().toISOString() } : x);
+        }
         const rawPool = ticketsSnap.exists() ? ticketsSnap.data().value : null;
         const poolActual = rawPool ? (typeof rawPool === "string" ? JSON.parse(rawPool) : rawPool) : {};
         const pendActual = pendSnap.exists() ? (pendSnap.data().value || []) : [];
         const target = pendActual.find(x => x.id === p.id);
         if (!target || target.estado !== "pendiente") throw new Error("YA_PROCESADA");
-        const disponibles = Object.keys(poolActual).filter(k => !poolActual[k]);
+        // Los números apartados para clientes de tarjetas QR que esperan
+        // aprobación no se le pueden dar a nadie más.
+        const apartadosOtros = numerosReservados(pendActual, p.rifaId, p.id);
+        const disponibles = Object.keys(poolActual).filter(k => !poolActual[k] && !apartadosOtros.has(k));
+        // Si el cliente ya vio sus números (tarjeta QR), se le asignan esos mismos.
+        const propios = (target.reservados || []).filter(n => n in poolActual && !poolActual[n] && !apartadosOtros.has(n));
         if (disponibles.length < p.cantidad) throw new Error("SIN_DISPONIBLES");
-        const pool = [...disponibles];
+        const pool = disponibles.filter(k => !propios.includes(k));
         const nextPool = { ...poolActual };
         asignados = [];
-        for (let i = 0; i < p.cantidad && pool.length; i++) {
+        propios.slice(0, p.cantidad).forEach(num => {
+          nextPool[num] = { nombre: p.nombre, telefono: p.telefono, fecha: p.fecha };
+          asignados.push(num);
+        });
+        for (let i = asignados.length; i < p.cantidad && pool.length; i++) {
           const idx = Math.floor(Math.random() * pool.length);
           const num = pool.splice(idx, 1)[0];
           nextPool[num] = { nombre: p.nombre, telefono: p.telefono, fecha: p.fecha };
@@ -2742,17 +3743,21 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
         // guardar".
         const nextPend = pendActual.map(x => {
           if (x.id !== p.id) return x;
-          const { captura, ...resto } = x;
+          const { captura, reservados, ...resto } = x;
           return { ...resto, estado: "aprobado", asignados };
         });
         tx.set(ticketsRef, { value: JSON.stringify(nextPool) });
         tx.set(pendRef, { value: nextPend });
+        if (tarjetasNext) tx.set(tarjetasRef, { value: tarjetasNext });
         nextPoolFinal = nextPool;
         nextPendFinal = nextPend;
+        nextTarjetasFinal = tarjetasNext;
       });
     } catch (e) {
       if (e.message === "SIN_DISPONIBLES") showToast("No hay suficientes boletos disponibles en esta rifa", "warn");
       else if (e.message === "YA_PROCESADA") showToast("Esta compra ya fue procesada.", "warn");
+      else if (e.message === "TARJETA_INVALIDA") showToast("La tarjeta QR de esta compra no coincide (no existe o es de otra rifa/cantidad). Recházala.", "warn");
+      else if (e.message === "TARJETA_USADA") showToast("Esa tarjeta QR ya se usó en otra compra. Recházala.", "warn");
       else { console.error("aprobar error:", e); showToast(`Error al asignar los boletos (${e.code || e.message || "desconocido"}). Intenta de nuevo.`, "warn"); }
       return;
     }
@@ -2762,6 +3767,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     // otra compra si se procesó casi al mismo tiempo.
     setBoletosLocal(b => ({ ...b, [p.rifaId]: nextPoolFinal }));
     setPendientesLocal(nextPendFinal);
+    if (nextTarjetasFinal) setTarjetasQRLocal(nextTarjetasFinal);
     showToast(`${asignados.length} boletos asignados a ${p.nombre}: ${asignados.join(", ")}`, "ok");
 
     // ¿Alguno de los boletos asignados es un Número Power?
@@ -3099,6 +4105,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             ["compras", "📥 Compras", pendientesActivos.length > 0 ? pendientesActivos.length : null, pendientesActivos.length > 0 ? "#FF6B35" : null],
             ["rifas", "🎟️ Gestionar rifas", null, null],
             ["pagos", "💳 Métodos de pago", null, null],
+            ["tarjetas", "🎫 Tarjetas QR", null, null],
             ["boletos", "📋 Boletos vendidos", vendidosTodos.length || null, null],
             ["ganadores", "🏆 Ganadores", historial.length || null, null],
             ["power", "⚡ Números Power", premiosPowerPendientes.length || null, premiosPowerPendientes.length > 0 ? "#f59e0b" : null],
@@ -3276,7 +4283,9 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                   <div style={{ fontSize:11, color:"#9AA1AC" }}>{new Date(p.fecha).toLocaleString("es-DO")}</div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, background:"#0D0F12", border:"1px solid #232830", borderRadius:8, padding:"8px 12px", marginBottom:10 }}>
-                  <Zap size={14} style={{ color:"#C6FF3D" }}/> {p.cantidad} boleto{p.cantidad>1?"s":""} por asignar al azar
+                  <Zap size={14} style={{ color:"#C6FF3D" }}/> {Array.isArray(p.reservados) && p.reservados.length>0
+                    ? <span>Números apartados: <strong>{p.reservados.join(", ")}</strong></span>
+                    : <span>{p.cantidad} boleto{p.cantidad>1?"s":""} por asignar al azar</span>}
                 </div>
                 {p.captura && (
                   <div style={{ marginBottom:10 }}>
@@ -3284,7 +4293,23 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                     <img src={p.captura} alt="Captura" style={{ width:"100%", maxHeight:200, objectFit:"contain", borderRadius:8, border:"1px solid #232830", background:"#0D0F12" }} />
                   </div>
                 )}
-                {!p.captura && p.metodo && !p.metodo.toLowerCase().includes("efectivo") && (
+                {p.tarjetaH && (() => {
+                  const t = (tarjetasQR||[]).find(x => x.h === p.tarjetaH);
+                  const problema = !t ? "Tarjeta no encontrada — no la apruebes"
+                    : (t.rifaId !== p.rifaId || t.cantidad !== p.cantidad) ? "La tarjeta no coincide con esta rifa o cantidad — no la apruebes"
+                    : (t.usada && t.compraId !== p.id) ? "Esta tarjeta ya se usó en otra compra — no la apruebes"
+                    : "";
+                  return (
+                    <div style={{ display:"flex", gap:8, alignItems:"flex-start", background: problema ? "rgba(255,84,112,0.08)" : "rgba(198,255,61,0.06)", border:`1px solid ${problema ? "rgba(255,84,112,0.35)" : "rgba(198,255,61,0.3)"}`, borderRadius:8, padding:"8px 12px", marginBottom:10, fontSize:12, color: problema ? "#FF5470" : "#C6FF3D" }}>
+                      {problema ? <AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/> : <Check size={14} style={{ flexShrink:0, marginTop:1 }}/>}
+                      <span>
+                        🎫 Tarjeta {etiquetaTarjeta(p.tarjetaNum)}{p.vendedor ? ` · Vendedor: ${p.vendedor}` : ""}
+                        <br/>{problema || "Tarjeta válida. Apruébala solo si ya recibiste el pago de esta tarjeta."}
+                      </span>
+                    </div>
+                  );
+                })()}
+                {!p.captura && !p.tarjetaH && p.metodo && !p.metodo.toLowerCase().includes("efectivo") && (
                   <div style={{ display:"flex", gap:8, alignItems:"center", background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.25)", borderRadius:8, padding:"8px 12px", marginBottom:10, fontSize:12, color:"#f59e0b" }}>
                     <AlertCircle size={14}/> Sin captura adjunta
                   </div>
@@ -3798,6 +4823,12 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             </button>
           </div>
         </div>
+      )}
+
+      {/* ---- TAB: TARJETAS QR ---- */}
+      {tabAdmin==="tarjetas" && (
+        <TarjetasQRAdmin rifas={rifas} tarjetasQR={tarjetasQR} setTarjetasQRLocal={setTarjetasQRLocal}
+          pendientes={pendientes} showToast={showToast} />
       )}
 
       {/* ---- TAB: RESPALDO ---- */}
