@@ -261,7 +261,8 @@ function roundRect(ctx, x, y, w, h, r) {
 // canvas y entrega un dataURL PNG por medio de cb. Si la rifa tiene foto de
 // portada la incluye arriba; si el comprador tiene varios números los
 // acomoda en una cuadrícula en vez de un solo número gigante.
-function generarImagenBoleto({ nombre, telefono, asignados, rifaTitulo, rifaImagen }, cb) {
+function generarImagenBoleto({ nombre, telefono, asignados, rifaTitulo, rifaImagen, instagram }, cb) {
+  const ig = usuarioInstagram(instagram);
   const W = 1000;
   let H = 1400;
   const canvas = document.createElement("canvas");
@@ -371,6 +372,19 @@ function generarImagenBoleto({ nombre, telefono, asignados, rifaTitulo, rifaImag
     ctx.fillStyle = "#F2F2EF";
     ctx.font = "700 20px Arial";
     ctx.fillText(enmascararTelefono(telefono), W - pad, y);
+
+    if (ig) {
+      // Invitación a seguir en Instagram (ahí es el sorteo en vivo)
+      y += 70;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#C6FF3D";
+      ctx.font = "800 24px Arial";
+      ctx.fillText("SORTEO EN VIVO EN INSTAGRAM", W / 2, y);
+      ctx.fillStyle = "#F2F2EF";
+      ctx.font = "800 34px Arial";
+      ctx.fillText("@" + ig, W / 2, y + 46);
+      y += 46;
+    }
 
     if (!altoFinal) { H = Math.max(900, y + 120); dibujarResto(imgPortada, true); return; }
 
@@ -644,15 +658,19 @@ function cargarImagenPortada(src) {
 // 8 tarjetas por hoja (2 columnas x 4 filas) con líneas punteadas para cortar.
 // Si hay foto de la rifa, va arriba a la derecha de cada tarjeta.
 // Devuelve una lista de imágenes PNG (una por hoja).
-function dibujarHojasTarjetas(tarjetas, rifaTitulo, foto) {
-  try { return dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto); }
+// opciones: escala (1 = 150 ppp para ver en pantalla, 2 = 300 ppp para el
+// PDF), jpg (true para el PDF) e instagram (usuario a imprimir).
+function dibujarHojasTarjetas(tarjetas, rifaTitulo, foto, opciones) {
+  try { return dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto, opciones || {}); }
   catch (e) {
     // Si la foto no se deja copiar al archivo, se repite sin foto
-    if (foto) return dibujarHojasTarjetasCon(tarjetas, rifaTitulo, null);
+    if (foto) return dibujarHojasTarjetasCon(tarjetas, rifaTitulo, null, opciones || {});
     throw e;
   }
 }
-function dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto) {
+function dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto, opciones) {
+  const escala = opciones.escala || 1;
+  const ig = usuarioInstagram(opciones.instagram);
   const W = 1275, H = 1650, margen = 45, gap = 30, cols = 2, filas = 4;
   const cardW = Math.floor((W - margen * 2 - gap * (cols - 1)) / cols);
   const cardH = Math.floor((H - margen * 2 - gap * (filas - 1)) / filas);
@@ -660,9 +678,17 @@ function dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto) {
   const hojas = [];
   for (let inicio = 0; inicio < tarjetas.length; inicio += porHoja) {
     const canvas = document.createElement("canvas");
-    canvas.width = W; canvas.height = H;
+    canvas.width = W * escala; canvas.height = H * escala;
     const ctx = canvas.getContext("2d");
+    ctx.scale(escala, escala);
     ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, W, H);
+    // Línea final de cada tarjeta: Instagram (si hay) o "válida una sola vez"
+    const pie = (tx, yLinea1, yLinea2, anchoTexto, t, tam1, tam2) => {
+      ctx.fillStyle = "#0D1B2A";
+      textoAjustado(ctx, "Tarjeta " + etiquetaTarjeta(t.num) + (ig ? " · uso único" : ""), tx, yLinea1, anchoTexto, 800, tam1, 12);
+      ctx.fillStyle = ig ? "#BE185D" : "#6B7280";
+      textoAjustado(ctx, ig ? `Sorteo EN VIVO: IG @${ig}` : "Válida una sola vez", tx, yLinea2, anchoTexto, ig ? 800 : 600, tam2, 9);
+    };
     tarjetas.slice(inicio, inicio + porHoja).forEach((t, i) => {
       const x = margen + (i % cols) * (cardW + gap);
       const y = margen + Math.floor(i / cols) * (cardH + gap);
@@ -728,12 +754,7 @@ function dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto) {
         ctx.fillStyle = "#4B5563";
         ctx.font = "600 13px Arial";
         textoEnLineas(ctx, "Escanea y registra tus datos.", tx, y + (t.total ? 308 : 288), anchoTexto, 16, t.total ? 1 : 2);
-        ctx.fillStyle = "#0D1B2A";
-        ctx.font = "800 16px Arial";
-        ctx.fillText("Tarjeta " + etiquetaTarjeta(t.num), tx, y + cardH - 34);
-        ctx.fillStyle = "#6B7280";
-        ctx.font = "600 12px Arial";
-        ctx.fillText("Válida una sola vez", tx, y + cardH - 17);
+        pie(tx, y + cardH - 34, y + cardH - 16, anchoTexto, t, 16, 12);
         return;
       }
       ctx.fillStyle = "#0D1B2A";
@@ -759,16 +780,64 @@ function dibujarHojasTarjetasCon(tarjetas, rifaTitulo, foto) {
       } else {
         yy = textoEnLineas(ctx, "Escanea el código y registra tu nombre y teléfono.", tx, yy + 142, anchoTexto, 19, 3);
       }
-      ctx.fillStyle = "#0D1B2A";
-      ctx.font = "800 17px Arial";
-      ctx.fillText("Tarjeta " + etiquetaTarjeta(t.num), tx, y + cardH - 44);
-      ctx.fillStyle = "#6B7280";
-      ctx.font = "600 13px Arial";
-      ctx.fillText("Válida una sola vez", tx, y + cardH - 24);
+      pie(tx, y + cardH - 44, y + cardH - 24, anchoTexto, t, 17, 13);
     });
-    hojas.push(canvas.toDataURL("image/png"));
+    hojas.push(opciones.jpg
+      ? { jpg: canvas.toDataURL("image/jpeg", 0.95), ancho: canvas.width, alto: canvas.height }
+      : canvas.toDataURL("image/png"));
   }
   return hojas;
+}
+
+// Saca el usuario de Instagram de lo que esté escrito en "Editar página"
+// (sirve tanto "@usuario" como el enlace completo instagram.com/usuario).
+function usuarioInstagram(valor) {
+  const v = String(valor || "").trim();
+  if (!v) return "";
+  const m = v.match(/instagram\.com\/([A-Za-z0-9._]+)/i);
+  const u = m ? m[1] : v.replace(/^@/, "").split(/[\s/?]/)[0];
+  return /^[A-Za-z0-9._]+$/.test(u) ? u : "";
+}
+
+// Escribe una línea de texto achicando la letra si no cabe en el ancho.
+function textoAjustado(ctx, texto, x, y, anchoMax, peso, tam, tamMin) {
+  let t = tam;
+  ctx.font = `${peso} ${t}px Arial`;
+  while (t > tamMin && ctx.measureText(texto).width > anchoMax) { t -= 0.5; ctx.font = `${peso} ${t}px Arial`; }
+  ctx.fillText(texto, x, y);
+}
+
+// Arma un PDF (tamaño carta) con una imagen JPG por página, sin librerías.
+function crearPdfDeImagenes(paginas) {
+  const enc = new TextEncoder();
+  const partes = [];
+  let largo = 0;
+  const offsets = [];
+  const agregar = (dato) => { const b = typeof dato === "string" ? enc.encode(dato) : dato; partes.push(b); largo += b.length; };
+  const objeto = (num, cuerpo, binario) => {
+    offsets[num] = largo;
+    agregar(`${num} 0 obj\n${cuerpo}`);
+    if (binario) { agregar(binario); agregar("\nendstream"); }
+    agregar("\nendobj\n");
+  };
+  agregar("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const total = 2 + paginas.length * 3;
+  const idsPaginas = paginas.map((_, i) => 3 + i * 3);
+  objeto(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  objeto(2, `<< /Type /Pages /Kids [${idsPaginas.map(n => n + " 0 R").join(" ")}] /Count ${paginas.length} >>`);
+  paginas.forEach((pg, i) => {
+    const nPag = 3 + i * 3, nCont = nPag + 1, nImg = nPag + 2;
+    const contenido = "q 612 0 0 792 0 0 cm /Im0 Do Q";
+    objeto(nPag, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 ${nImg} 0 R >> >> /Contents ${nCont} 0 R >>`);
+    objeto(nCont, `<< /Length ${contenido.length} >>\nstream\n${contenido}\nendstream`);
+    const bytes = Uint8Array.from(atob(pg.jpg.split(",")[1]), c => c.charCodeAt(0));
+    objeto(nImg, `<< /Type /XObject /Subtype /Image /Width ${pg.ancho} /Height ${pg.alto} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\nstream\n`, bytes);
+  });
+  const inicioXref = largo;
+  let xref = `xref\n0 ${total + 1}\n0000000000 65535 f \n`;
+  for (let n = 1; n <= total; n++) xref += String(offsets[n]).padStart(10, "0") + " 00000 n \n";
+  agregar(xref + `trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${inicioXref}\n%%EOF\n`);
+  return new Blob(partes, { type: "application/pdf" });
 }
 
 // Números que ya están apartados para compras con tarjeta QR que todavía
@@ -2196,7 +2265,7 @@ export default function App() {
       )}
 
       {view==="tarjeta" && (
-        <CanjeTarjeta codigo={codigoTarjeta} rifas={rifas} vendidosPorRifa={vendidosPorRifa}
+        <CanjeTarjeta codigo={codigoTarjeta} rifas={rifas} vendidosPorRifa={vendidosPorRifa} instagram={siteConfig.instagram}
           agregarPendiente={agregarPendiente}
           onSalir={()=>{ try { window.history.replaceState(null, "", "/"); } catch {} setView("catalogo"); }} />
       )}
@@ -2262,7 +2331,8 @@ export default function App() {
 /* ============================================================
    CANJE DE TARJETA QR — lo que ve el cliente al escanear
    ============================================================ */
-function CanjeTarjeta({ codigo, rifas, vendidosPorRifa, agregarPendiente, onSalir }) {
+function CanjeTarjeta({ codigo, rifas, vendidosPorRifa, agregarPendiente, onSalir, instagram }) {
+  const ig = usuarioInstagram(instagram);
   // estado: cargando | error | invalida | usada | cerrada | agotada | form | listo
   const [estado, setEstado] = useState("cargando");
   const [tarjeta, setTarjeta] = useState(null);
@@ -2336,7 +2406,7 @@ function CanjeTarjeta({ codigo, rifas, vendidosPorRifa, agregarPendiente, onSali
       try {
         generarImagenBoleto({
           nombre: nueva.nombre, telefono: nueva.telefono, asignados: r.reservados || [],
-          rifaTitulo: rifa.titulo, rifaImagen: rifa.imagen || "",
+          rifaTitulo: rifa.titulo, rifaImagen: rifa.imagen || "", instagram,
         }, (url) => setImgBoleto(url));
       } catch (e) { console.error("imagen boleto error:", e); }
       setEstado("listo");
@@ -2438,6 +2508,16 @@ function CanjeTarjeta({ codigo, rifas, vendidosPorRifa, agregarPendiente, onSali
               <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:26, color:"#C6FF3D", letterSpacing:1 }}>
                 {numeros.map(n => "#" + n).join("  ")}
               </div>
+            </div>
+          )}
+          {ig && (
+            <div style={{ marginTop:18, background:"#14171C", border:"1px solid rgba(236,72,153,0.4)", borderRadius:14, padding:"18px 16px", textAlign:"center" }}>
+              <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:15, marginBottom:6 }}>El sorteo es EN VIVO en Instagram</div>
+              <p style={{ color:"#9AA1AC", fontSize:13, lineHeight:1.5, marginBottom:14 }}>Síguenos para ver el sorteo y saber si ganas 🍀</p>
+              <a href={`https://www.instagram.com/${ig}/`} target="_blank" rel="noopener noreferrer"
+                style={{ display:"block", background:"linear-gradient(90deg,#f58529,#dd2a7b,#8134af)", color:"#fff", fontWeight:800, fontSize:15, padding:"14px 20px", borderRadius:10, textDecoration:"none" }}>
+                Seguir a @{ig}
+              </a>
             </div>
           )}
           <div style={{ textAlign:"center" }}>{botonVolver}</div>
@@ -3178,7 +3258,8 @@ function BoletoVendidoRow({ num, info, onEliminar }) {
 /* ============================================================
    ADMIN — TARJETAS QR (crear, imprimir y controlar)
    ============================================================ */
-function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, showToast }) {
+function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, showToast, instagram }) {
+  const [creandoPdf, setCreandoPdf] = useState(false);
   const rifasActivas = rifas.filter(r => r.activa);
   const [rifaId, setRifaId] = useState(rifasActivas[0]?.id || "");
   const [cantidadSel, setCantidadSel] = useState("5");
@@ -3276,8 +3357,11 @@ function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, sh
       });
       setTarjetasQRLocal(final);
       const foto = await cargarImagenPortada(fotos[rifa.id] || rifa.imagen);
-      const paginas = dibujarHojasTarjetas(asignadas.map(a => ({ codigo: a.codigo, num: a.num, cantidad, total: cantidad * (rifa.precio || 0) })), rifa.titulo, foto);
-      setHojas({ paginas, desde: asignadas[0].num, hasta: asignadas[asignadas.length - 1].num });
+      const datos = asignadas.map(a => ({ codigo: a.codigo, num: a.num, cantidad, total: cantidad * (rifa.precio || 0) }));
+      const paginas = dibujarHojasTarjetas(datos, rifa.titulo, foto, { instagram });
+      // Los datos se guardan solo en esta pantalla (no en Firebase) para poder
+      // armar el PDF en alta calidad cuando lo pidas.
+      setHojas({ paginas, datos, rifaTitulo: rifa.titulo, foto, desde: asignadas[0].num, hasta: asignadas[asignadas.length - 1].num });
       showToast(`${asignadas.length} tarjeta${asignadas.length>1?"s":""} creada${asignadas.length>1?"s":""} ✓ Descarga las hojas ahora.`, "ok");
     } catch (e) {
       console.error("generar tarjetas error:", e);
@@ -3285,6 +3369,27 @@ function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, sh
       else showToast("No se pudieron crear las tarjetas. Intenta de nuevo.", "warn");
     }
     setGenerando(false);
+  };
+
+  // PDF tamaño carta al doble de nitidez (300 ppp), listo para imprimir
+  const descargarPdf = async () => {
+    if (!hojas || creandoPdf) return;
+    setCreandoPdf(true);
+    await new Promise(r => setTimeout(r, 50)); // deja que se vea "Preparando…"
+    try {
+      const paginas = dibujarHojasTarjetas(hojas.datos, hojas.rifaTitulo, hojas.foto, { instagram, escala: 2, jpg: true });
+      const blob = crearPdfDeImagenes(paginas);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tarjetas-${etiquetaTarjeta(hojas.desde)}-a-${etiquetaTarjeta(hojas.hasta)}.pdf`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      console.error("pdf tarjetas error:", e);
+      showToast("No se pudo crear el PDF. Descarga las hojas como imagen.", "warn");
+    }
+    setCreandoPdf(false);
   };
 
   const descargarHoja = (url, i) => {
@@ -3431,19 +3536,24 @@ function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, sh
             <AlertCircle size={15} style={{ flexShrink:0, marginTop:1 }}/>
             Descarga las hojas ahora. Por seguridad, los códigos no se guardan en la página: si cierras esta pantalla sin descargarlas, ya no se pueden volver a imprimir (en ese caso, elimina ese lote y crea otro).
           </div>
+          <button onClick={descargarPdf} disabled={creandoPdf}
+            style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, width:"100%", background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:15, padding:"15px 20px", borderRadius:10, cursor: creandoPdf ? "default" : "pointer", opacity: creandoPdf ? 0.6 : 1, marginBottom:6 }}>
+            <Save size={16}/> {creandoPdf ? "Preparando PDF…" : `Descargar PDF para imprimir (${hojas.paginas.length} hoja${hojas.paginas.length>1?"s":""})`}
+          </button>
+          <p style={{ fontSize:11, color:"#5a6170", marginBottom:16, textAlign:"center" }}>Alta calidad, tamaño carta. También puedes bajar cada hoja como imagen abajo.</p>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))", gap:14 }}>
             {hojas.paginas.map((url, i) => (
               <div key={i} style={{ background:"#0D0F12", border:"1px solid #232830", borderRadius:10, padding:10 }}>
                 <img src={url} alt={`Hoja ${i+1}`} style={{ width:"100%", borderRadius:6, background:"#fff" }} />
                 <button onClick={()=>descargarHoja(url, i)}
-                  style={{ width:"100%", marginTop:8, background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:12, padding:"10px 0", borderRadius:8, cursor:"pointer" }}>
-                  Descargar hoja {i+1}
+                  style={{ width:"100%", marginTop:8, background:"transparent", color:"#9AA1AC", border:"1px solid #333", fontWeight:700, fontSize:12, padding:"9px 0", borderRadius:8, cursor:"pointer" }}>
+                  Imagen hoja {i+1}
                 </button>
               </div>
             ))}
           </div>
           <p style={{ fontSize:11, color:"#5a6170", marginTop:12, lineHeight:1.5 }}>
-            Imprime en papel tamaño carta, al 100% (sin "ajustar"), y recorta por las líneas punteadas. Antes de imprimir muchas, prueba escanear una.
+            Imprime el PDF en papel tamaño carta, al 100% o "tamaño real" (sin "ajustar a la página"), y recorta por las líneas punteadas. Antes de imprimir muchas, prueba escanear una.
           </p>
           <button onClick={()=>setHojas(null)} style={{ marginTop:12, background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:12, padding:"10px 16px", borderRadius:9, cursor:"pointer" }}>
             Ya las descargué, cerrar
@@ -3817,7 +3927,8 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     generarImagenBoleto({
       nombre: p.nombre, telefono: p.telefono, asignados,
       rifaTitulo: tituloRifa(p.rifaId),
-      rifaImagen: rifaObj?.imagen || ""
+      rifaImagen: rifaObj?.imagen || "",
+      instagram: siteConfig?.instagram || "",
     }, (dataUrl) => setImgBoleto(dataUrl));
   };
 
@@ -4828,7 +4939,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
       {/* ---- TAB: TARJETAS QR ---- */}
       {tabAdmin==="tarjetas" && (
         <TarjetasQRAdmin rifas={rifas} tarjetasQR={tarjetasQR} setTarjetasQRLocal={setTarjetasQRLocal}
-          pendientes={pendientes} showToast={showToast} />
+          pendientes={pendientes} showToast={showToast} instagram={siteConfig?.instagram} />
       )}
 
       {/* ---- TAB: RESPALDO ---- */}
