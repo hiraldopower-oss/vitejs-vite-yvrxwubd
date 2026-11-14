@@ -4428,7 +4428,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:360, overflowY:"auto" }}>
                 {ventasPorDia.slice(0, 60).map(v => (
-                  <div key={v.dia} style={{ position:"relative", background:"#0D0F12", borderRadius:8, padding:"9px 12px", overflow:"hidden" }}>
+                  <div key={v.dia} style={{ position:"relative", flexShrink:0, background:"#0D0F12", borderRadius:8, padding:"9px 12px", overflow:"hidden" }}>
                     <div style={{ position:"absolute", inset:0, width:`${Math.round(v.dinero / maxDineroDia * 100)}%`, background:"rgba(198,255,61,0.07)" }} />
                     <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:8, fontSize:13, flexWrap:"wrap" }}>
                       <span style={{ fontWeight: v.dia===hoyDR ? 800 : 600, color: v.dia===hoyDR ? "#C6FF3D" : "#F2F2EF", textTransform:"capitalize" }}>{v.dia===hoyDR ? "Hoy · " : ""}{etiquetaDia(v.dia)}</span>
