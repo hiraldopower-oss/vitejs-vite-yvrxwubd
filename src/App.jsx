@@ -861,6 +861,15 @@ function crearPdfDeImagenes(paginas) {
 const diaDR = (fecha) => new Date(fecha).toLocaleDateString("en-CA", { timeZone: "America/Santo_Domingo" });
 const etiquetaDia = (dia) => new Date(dia + "T12:00:00-04:00").toLocaleDateString("es-DO", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
+// Nombre corto del método de pago de una compra, para agrupar las ventas.
+const nombreMetodo = (m) => {
+  const t = String(m || "").trim();
+  if (!t) return "Sin método";
+  if (/tarjeta\s*qr/i.test(t)) return "Tarjeta QR";
+  return t;
+};
+const colorMetodo = (nombre) => /tarjeta qr/i.test(nombre) ? "#C6FF3D" : /efectivo/i.test(nombre) ? "#f59e0b" : "#818cf8";
+
 // Lista de gastos de una rifa. Incluye los dos montos del sistema anterior
 // ("promoción" e "inversión") para que no se pierdan.
 function listaGastos(g) {
@@ -3866,16 +3875,30 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
   const [rifaVentas, setRifaVentas] = useState("todas");
   const hoyDR = diaDR(ahora);
   const ayerDR = diaDR(ahora - 86400000);
-  const ventasPorDia = Object.values(pendientesAprobados
-    .filter(p => (rifaVentas === "todas" || p.rifaId === rifaVentas) && !isNaN(new Date(p.aprobadaFecha || p.fecha)))
+  // Suma una compra a un grupo (día o método) y también a su desglose por método
+  const sumarCompra = (g, p) => {
+    g.compras += 1; g.boletos += (p.cantidad || 0); g.dinero += (p.total || 0);
+    const nm = nombreMetodo(p.metodo);
+    const m = g.metodos[nm] || (g.metodos[nm] = { metodo: nm, compras: 0, boletos: 0, dinero: 0 });
+    m.compras += 1; m.boletos += (p.cantidad || 0); m.dinero += (p.total || 0);
+  };
+  const metodosOrdenados = (g) => Object.values(g.metodos || {}).sort((a, b) => b.dinero - a.dinero);
+  const comprasVentas = pendientesAprobados
+    .filter(p => (rifaVentas === "todas" || p.rifaId === rifaVentas) && !isNaN(new Date(p.aprobadaFecha || p.fecha)));
+  const ventasPorDia = Object.values(comprasVentas
     .reduce((acc, p) => {
       const dia = diaDR(p.aprobadaFecha || p.fecha);
-      const d = acc[dia] || (acc[dia] = { dia, compras: 0, boletos: 0, dinero: 0 });
-      d.compras += 1; d.boletos += (p.cantidad || 0); d.dinero += (p.total || 0);
+      sumarCompra(acc[dia] || (acc[dia] = { dia, compras: 0, boletos: 0, dinero: 0, metodos: {} }), p);
       return acc;
     }, {})).sort((a, b) => b.dia.localeCompare(a.dia));
-  const ventaDe = (dia) => ventasPorDia.find(v => v.dia === dia) || { dia, compras: 0, boletos: 0, dinero: 0 };
+  const ventaDe = (dia) => ventasPorDia.find(v => v.dia === dia) || { dia, compras: 0, boletos: 0, dinero: 0, metodos: {} };
   const maxDineroDia = Math.max(1, ...ventasPorDia.map(v => v.dinero));
+  // Ventas por método de pago (todo el tiempo, o el período elegido)
+  const [periodoMetodo, setPeriodoMetodo] = useState("todo");
+  const [diaAbierto, setDiaAbierto] = useState(null);
+  const totalMetodos = comprasVentas
+    .filter(p => periodoMetodo === "todo" || diaDR(p.aprobadaFecha || p.fecha) === (periodoMetodo === "hoy" ? hoyDR : ayerDR))
+    .reduce((g, p) => { sumarCompra(g, p); return g; }, { compras: 0, boletos: 0, dinero: 0, metodos: {} });
 
   const descargarRespaldo = () => {
     const respaldo = {
@@ -4428,14 +4451,72 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:360, overflowY:"auto" }}>
                 {ventasPorDia.slice(0, 60).map(v => (
-                  <div key={v.dia} style={{ position:"relative", flexShrink:0, background:"#0D0F12", borderRadius:8, padding:"9px 12px", overflow:"hidden" }}>
-                    <div style={{ position:"absolute", inset:0, width:`${Math.round(v.dinero / maxDineroDia * 100)}%`, background:"rgba(198,255,61,0.07)" }} />
+                  <div key={v.dia} onClick={()=>setDiaAbierto(a => a===v.dia ? null : v.dia)}
+                    style={{ position:"relative", flexShrink:0, background:"#0D0F12", borderRadius:8, padding:"9px 12px", overflow:"hidden", cursor:"pointer", border: diaAbierto===v.dia ? "1px solid #333" : "1px solid transparent" }}>
+                    <div style={{ position:"absolute", top:0, left:0, bottom:0, width:`${Math.round(v.dinero / maxDineroDia * 100)}%`, background:"rgba(198,255,61,0.07)" }} />
                     <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:8, fontSize:13, flexWrap:"wrap" }}>
-                      <span style={{ fontWeight: v.dia===hoyDR ? 800 : 600, color: v.dia===hoyDR ? "#C6FF3D" : "#F2F2EF", textTransform:"capitalize" }}>{v.dia===hoyDR ? "Hoy · " : ""}{etiquetaDia(v.dia)}</span>
+                      <span style={{ fontWeight: v.dia===hoyDR ? 800 : 600, color: v.dia===hoyDR ? "#C6FF3D" : "#F2F2EF", textTransform:"capitalize" }}>{diaAbierto===v.dia ? "▾ " : "▸ "}{v.dia===hoyDR ? "Hoy · " : ""}{etiquetaDia(v.dia)}</span>
                       <span style={{ color:"#9AA1AC" }}><strong style={{ color:"#F2F2EF" }}>{v.boletos}</strong> boletos · <strong style={{ color:"#C6FF3D" }}>{fmtMoney(v.dinero)}</strong> · {v.compras} compra{v.compras!==1?"s":""}</span>
                     </div>
+                    {diaAbierto===v.dia && (
+                      <div style={{ position:"relative", marginTop:8, paddingTop:8, borderTop:"1px solid #232830", display:"flex", flexDirection:"column", gap:4 }}>
+                        {metodosOrdenados(v).map(m => (
+                          <div key={m.metodo} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:12, flexWrap:"wrap" }}>
+                            <span style={{ display:"flex", alignItems:"center", gap:6 }}>
+                              <span style={{ width:8, height:8, borderRadius:99, background:colorMetodo(m.metodo), flexShrink:0 }} />
+                              {m.metodo}
+                            </span>
+                            <span style={{ color:"#9AA1AC" }}>{m.boletos} boletos · <strong style={{ color:"#F2F2EF" }}>{fmtMoney(m.dinero)}</strong> · {m.compras} compra{m.compras!==1?"s":""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* VENTAS POR MÉTODO DE PAGO */}
+          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:20, marginBottom:20 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:6 }}>
+              <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:16 }}>Ventas por método de pago</div>
+              <select value={periodoMetodo} onChange={e=>setPeriodoMetodo(e.target.value)}
+                style={{ background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"9px 12px", borderRadius:9, fontSize:13, outline:"none" }}>
+                <option value="todo">Todo el tiempo</option>
+                <option value="hoy">Hoy</option>
+                <option value="ayer">Ayer</option>
+              </select>
+            </div>
+            <div style={{ fontSize:11, color:"#5a6170", marginBottom:14, lineHeight:1.5 }}>
+              {rifaVentas === "todas" ? "Todas las rifas" : (rifas.find(r=>r.id===rifaVentas)?.titulo || "")} · solo compras aprobadas. Toca un día en "Ventas por día" para ver su desglose.
+            </div>
+            {totalMetodos.compras === 0 ? (
+              <p style={{ fontSize:13, color:"#9AA1AC" }}>No hay ventas aprobadas en este período.</p>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {metodosOrdenados(totalMetodos).map(m => {
+                  const pct = Math.round(m.dinero / Math.max(1, totalMetodos.dinero) * 100);
+                  return (
+                    <div key={m.metodo} style={{ background:"#0D0F12", borderRadius:9, padding:"10px 13px" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8, flexWrap:"wrap" }}>
+                        <span style={{ display:"flex", alignItems:"center", gap:7, fontWeight:800, fontSize:14 }}>
+                          <span style={{ width:9, height:9, borderRadius:99, background:colorMetodo(m.metodo), flexShrink:0 }} />
+                          {m.metodo}
+                        </span>
+                        <span style={{ fontSize:14, fontWeight:800, color:colorMetodo(m.metodo) }}>{fmtMoney(m.dinero)}</span>
+                      </div>
+                      <div style={{ height:6, background:"#14171C", borderRadius:99, overflow:"hidden", margin:"8px 0 6px" }}>
+                        <div style={{ height:"100%", width:`${pct}%`, background:colorMetodo(m.metodo) }} />
+                      </div>
+                      <div style={{ fontSize:12, color:"#9AA1AC" }}>{pct}% del dinero · {m.boletos} boletos · {m.compras} compra{m.compras!==1?"s":""}</div>
+                    </div>
+                  );
+                })}
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 2px 0", color:"#9AA1AC" }}>
+                  <span>Total</span>
+                  <span><strong style={{ color:"#F2F2EF" }}>{totalMetodos.boletos}</strong> boletos · <strong style={{ color:"#C6FF3D" }}>{fmtMoney(totalMetodos.dinero)}</strong></span>
+                </div>
               </div>
             )}
           </div>
