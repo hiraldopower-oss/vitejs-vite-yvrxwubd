@@ -17,12 +17,26 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 const auth = getAuth(firebaseApp);
 
+// Lee un documento de Firebase. Si la conexión está lenta lo reintenta
+// varias veces, y si aun así no responde, AVISA con un error en vez de
+// devolver datos de ejemplo (antes, con mala señal, la página mostraba la
+// rifa de muestra "Scooter Eléctrica — CERRADO" y el panel podía llegar a
+// guardar esos datos de ejemplo encima de los reales).
+// "def" solo se usa cuando el documento de verdad no existe todavía.
 const dbGet = async (key, def) => {
-  try {
-    const timeout = new Promise((_, reject) => setTimeout(() => reject("timeout"), 5000));
-    const snap = await Promise.race([getDoc(doc(db, "hiraldopower", key)), timeout]);
-    return snap.exists() ? snap.data().value : def;
-  } catch { return def; }
+  const esperas = [8000, 12000, 20000];
+  for (let i = 0; i < esperas.length; i++) {
+    try {
+      let reloj;
+      const timeout = new Promise((_, reject) => { reloj = setTimeout(() => reject(new Error("timeout")), esperas[i]); });
+      const snap = await Promise.race([getDoc(doc(db, "hiraldopower", key)), timeout]).finally(() => clearTimeout(reloj));
+      return snap.exists() ? snap.data().value : def;
+    } catch (e) {
+      console.warn("Lectura lenta o fallida:", key, e?.message || e);
+      if (i < esperas.length - 1) await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+  throw new Error("SIN_CONEXION");
 };
 
 const dbSet = async (key, val) => {
@@ -69,8 +83,10 @@ const cargarTodosLosBoletos = async (listaRifas) => {
   const legacy = await dbGet("tickets", null);
   const esFormatoPlanoViejo = legacy && Object.keys(legacy).length > 0 && Object.keys(legacy).every(k => /^\d{3}$/.test(k));
   const b = {};
-  for (const rifa of (listaRifas || [])) {
-    let pool = await leerPoolBoletos(rifa.id);
+  const lista = listaRifas || [];
+  const pools = await Promise.all(lista.map(rifa => leerPoolBoletos(rifa.id)));
+  for (const [i, rifa] of lista.entries()) {
+    let pool = pools[i];
     if (!pool && legacy) {
       if (legacy[rifa.id]) pool = legacy[rifa.id];
       else if (esFormatoPlanoViejo && listaRifas[0]?.id === rifa.id) pool = legacy;
@@ -838,6 +854,22 @@ function crearPdfDeImagenes(paginas) {
   for (let n = 1; n <= total; n++) xref += String(offsets[n]).padStart(10, "0") + " 00000 n \n";
   agregar(xref + `trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${inicioXref}\n%%EOF\n`);
   return new Blob(partes, { type: "application/pdf" });
+}
+
+// Día (en hora de República Dominicana) de una fecha, como "2026-11-14".
+// El día cambia a las 12:00 de la madrugada hora dominicana.
+const diaDR = (fecha) => new Date(fecha).toLocaleDateString("en-CA", { timeZone: "America/Santo_Domingo" });
+const etiquetaDia = (dia) => new Date(dia + "T12:00:00-04:00").toLocaleDateString("es-DO", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+
+// Lista de gastos de una rifa. Incluye los dos montos del sistema anterior
+// ("promoción" e "inversión") para que no se pierdan.
+function listaGastos(g) {
+  const gasto = g || {};
+  return [
+    ...(Number(gasto.promocion) > 0 ? [{ id: "_promocion", descripcion: "Promoción", monto: Number(gasto.promocion), legacy: "promocion" }] : []),
+    ...(Number(gasto.inversion) > 0 ? [{ id: "_inversion", descripcion: "Inversión (premio, etc.)", monto: Number(gasto.inversion), legacy: "inversion" }] : []),
+    ...(Array.isArray(gasto.items) ? gasto.items : []),
+  ];
 }
 
 // Números que ya están apartados para compras con tarjeta QR que todavía
@@ -1849,26 +1881,32 @@ export default function App() {
     document.title = siteConfig.marca || "HIRALDO POWER";
   }, [siteConfig.marca]);
 
-  useEffect(() => {
-    (async () => {
-      const load = async (key, def) => { return await dbGet(key, def); };
-      const r = await load("rifas", RIFAS_INICIALES);
+  // Carga inicial. Todo se pide a la vez (más rápido) y, si la conexión no
+  // responde, se muestra un aviso con botón "Reintentar" en vez de datos de
+  // ejemplo.
+  const [errorCarga, setErrorCarga] = useState(false);
+  const [cargaLenta, setCargaLenta] = useState(false);
+  const cargarTodo = async () => {
+    setErrorCarga(false); setCargaLenta(false);
+    const aviso = setTimeout(() => setCargaLenta(true), 7000);
+    try {
+      const [r, p, g, h, mp, sc, pn, pp, gr, tq] = await Promise.all([
+        dbGet("rifas", RIFAS_INICIALES), dbGet("pending", []), dbGet("ganador", null), dbGet("historial", []),
+        dbGet("metodosPago", METODOS_PAGO_INICIALES), dbGet("siteConfig", SITE_CONFIG_INICIAL),
+        dbGet("powerNumbers", POWER_NUMBERS_INICIAL), dbGet("premiosPower", []), dbGet("gastosRifas", {}), dbGet("tarjetasQR", []),
+      ]);
       const b = await cargarTodosLosBoletos(r);
-      const p = await load("pending", []);
-      const g = await load("ganador", null);
-      const h = await load("historial", []);
-      const mp = await load("metodosPago", METODOS_PAGO_INICIALES);
-      const sc = await load("siteConfig", SITE_CONFIG_INICIAL);
-      const pn = await load("powerNumbers", POWER_NUMBERS_INICIAL);
-      const pp = await load("premiosPower", []);
-      const gr = await load("gastosRifas", {});
-      const tq = await load("tarjetasQR", []);
       setBoletos(b); setPendientes(p); setGanador(g); setHistorial(h); setRifas(r); setMetodosPago(mp); setSiteConfig({...SITE_CONFIG_INICIAL, ...sc});
       setPowerNumbers(pn); setPremiosPower(pp); setGastosRifas(gr); setTarjetasQR(tq);
       if (codigoTarjeta) setView("tarjeta");
       setReady(true);
-    })();
-  }, []);
+    } catch (e) {
+      console.error("No se pudo cargar la página:", e);
+      setErrorCarga(true);
+    }
+    clearTimeout(aviso);
+  };
+  useEffect(() => { cargarTodo(); }, []);
 
   const save = async (key, val, setter) => { setter(val); const ok = await dbSet(key, val); return ok; };
   const showToast = (msg, kind="ok") => { setToast({msg,kind}); setTimeout(()=>setToast(null), kind==="power"?6500:3200); };
@@ -1957,17 +1995,16 @@ export default function App() {
     return totalBoletosActivas>0 ? Math.round((totalVendidosActivas/totalBoletosActivas)*100) : 0;
   })();
 
+  // Si alguna lectura falla, no se cambia NADA de lo que ya se ve (antes una
+  // falla dejaba la lista de compras vacía o la rifa de ejemplo en pantalla).
   const refreshFromFirebase = async () => {
     try {
-      const p = await dbGet("pending", []);
-      const r = await dbGet("rifas", RIFAS_INICIALES);
+      const [p, r, h, sc, pn, pp, gr, tq] = await Promise.all([
+        dbGet("pending", []), dbGet("rifas", RIFAS_INICIALES), dbGet("historial", []),
+        dbGet("siteConfig", SITE_CONFIG_INICIAL), dbGet("powerNumbers", POWER_NUMBERS_INICIAL),
+        dbGet("premiosPower", []), dbGet("gastosRifas", {}), dbGet("tarjetasQR", []),
+      ]);
       const b = await cargarTodosLosBoletos(r);
-      const h = await dbGet("historial", []);
-      const sc = await dbGet("siteConfig", SITE_CONFIG_INICIAL);
-      const pn = await dbGet("powerNumbers", POWER_NUMBERS_INICIAL);
-      const pp = await dbGet("premiosPower", []);
-      const gr = await dbGet("gastosRifas", {});
-      const tq = await dbGet("tarjetasQR", []);
       setTarjetasQR(tq);
       setPendientes(p);
       setBoletos(b);
@@ -1977,7 +2014,11 @@ export default function App() {
       setPowerNumbers(pn);
       setPremiosPower(pp);
       setGastosRifas(gr);
-    } catch {}
+      return true;
+    } catch (e) {
+      console.warn("Actualización omitida (conexión lenta):", e?.message || e);
+      return false;
+    }
   };
 
   const irARifa = (rifa) => { setRifaActiva(rifa); setView("rifa"); };
@@ -2063,18 +2104,32 @@ export default function App() {
           }
           idsPendientesVistosRef.current = new Set(p.map(x => x.id));
         }
-        setPendientes(p);
         const b = await cargarTodosLosBoletos(rifas);
+        setPendientes(p);
         setBoletos(b);
-      } catch {}
+      } catch {} // si falla la conexión, se queda lo que ya había en pantalla
     }, 20000); // cada 20 segundos
     return () => clearInterval(intervalo);
   }, [view, rifas, notifPermiso]);
 
+  if (!ready && errorCarga) return (
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#F2F2EF", gap:14, padding:24, textAlign:"center", fontFamily:"system-ui,sans-serif" }}>
+      <AlertCircle size={42} style={{ color:"#f59e0b" }} />
+      <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:18 }}>No pudimos cargar la página</div>
+      <p style={{ color:"#9AA1AC", fontSize:14, lineHeight:1.6, maxWidth:340 }}>
+        Parece que la conexión a internet está lenta o se cortó. Tus boletos y compras están seguros. Revisa tu señal y toca Reintentar.
+      </p>
+      <button onClick={cargarTodo} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:15, padding:"14px 30px", borderRadius:10, cursor:"pointer" }}>
+        Reintentar
+      </button>
+    </div>
+  );
+
   if (!ready) return (
-    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#C6FF3D", gap:12, fontFamily:"'Arial Black',sans-serif", letterSpacing:1 }}>
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"#0D0F12", color:"#C6FF3D", gap:12, fontFamily:"'Arial Black',sans-serif", letterSpacing:1, padding:24, textAlign:"center" }}>
       <Zap size={40} style={{ animation:"pulse 1.2s ease-in-out infinite" }} />
       CARGANDO SISTEMA…
+      {cargaLenta && <span style={{ fontFamily:"system-ui,sans-serif", fontSize:13, color:"#9AA1AC", letterSpacing:0, maxWidth:300, lineHeight:1.5 }}>La conexión está lenta, seguimos intentando…</span>}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
     </div>
   );
@@ -3432,13 +3487,25 @@ function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, sh
     return acc;
   }, {})).sort((a, b) => new Date(b.creada) - new Date(a.creada));
 
-  // Resumen por vendedor (solo tarjetas ya aprobadas) — útil para comisiones
-  const porVendedor = Object.values(lista.filter(t => t.usada).reduce((acc, t) => {
-    const k = t.vendedor || "Sin vendedor";
-    const v = acc[k] || (acc[k] = { vendedor: k, tarjetas: 0, boletos: 0 });
-    v.tarjetas += 1; v.boletos += t.cantidad;
+  // Resumen por vendedor — útil para comisiones. Junta el mismo nombre
+  // aunque esté escrito distinto ("Luz Delmira", "LUZDELMIRA", con acento o
+  // con espacios de más) y muestra aprobadas, por aprobar y sin usar.
+  const claveVendedor = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "").toUpperCase();
+  const porVendedor = Object.values(lista.reduce((acc, t) => {
+    const k = claveVendedor(t.vendedor) || "—";
+    const v = acc[k] || (acc[k] = { clave: k, nombres: {}, entregadas: 0, aprobadas: 0, boletos: 0, porAprobar: 0, boletosPorAprobar: 0, sinUsar: 0 });
+    const nombre = String(t.vendedor || "").trim().replace(/\s+/g, " ") || "Sin vendedor";
+    v.nombres[nombre] = (v.nombres[nombre] || 0) + 1;
+    v.entregadas += 1;
+    const est = estadoDe(t);
+    if (est === "usada") { v.aprobadas += 1; v.boletos += t.cantidad; }
+    else if (est === "registrada") { v.porAprobar += 1; v.boletosPorAprobar += t.cantidad; }
+    else v.sinUsar += 1;
     return acc;
-  }, {})).sort((a, b) => b.boletos - a.boletos);
+  }, {})).map(v => {
+    const nombres = Object.entries(v.nombres).sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    return { ...v, vendedor: nombres[0], variantes: nombres };
+  }).sort((a, b) => b.boletos - a.boletos || b.entregadas - a.entregadas);
 
   const campo = { width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none" };
   const etiqueta = { display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 };
@@ -3564,12 +3631,25 @@ function TarjetasQRAdmin({ rifas, tarjetasQR, setTarjetasQRLocal, pendientes, sh
       {/* RESUMEN POR VENDEDOR */}
       {porVendedor.length > 0 && (
         <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:20, marginBottom:20 }}>
-          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:12 }}>Vendido con tarjetas (aprobadas)</h3>
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          <h3 style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:4 }}>Ventas por vendedor</h3>
+          <p style={{ fontSize:11, color:"#5a6170", marginBottom:12, lineHeight:1.5 }}>
+            Las comisiones van por los boletos <strong style={{ color:"#C6FF3D" }}>aprobados</strong>. "Por aprobar" = el cliente ya registró la tarjeta y falta que la apruebes. "Sin usar" = nadie la ha escaneado todavía (no vendida, o el cliente no la ha registrado).
+          </p>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
             {porVendedor.map(v => (
-              <div key={v.vendedor} style={{ display:"flex", justifyContent:"space-between", fontSize:13, background:"#0D0F12", borderRadius:8, padding:"9px 12px" }}>
-                <span style={{ fontWeight:700 }}>{v.vendedor}</span>
-                <span style={{ color:"#9AA1AC" }}>{v.tarjetas} tarjeta{v.tarjetas!==1?"s":""} · <strong style={{ color:"#C6FF3D" }}>{v.boletos} boletos</strong></span>
+              <div key={v.clave} style={{ background:"#0D0F12", borderRadius:9, padding:"11px 13px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8, flexWrap:"wrap" }}>
+                  <span style={{ fontWeight:800, fontSize:14 }}>{v.vendedor}</span>
+                  <span style={{ fontSize:13, color:"#9AA1AC" }}>{v.aprobadas} tarjeta{v.aprobadas!==1?"s":""} · <strong style={{ color:"#C6FF3D" }}>{v.boletos} boletos aprobados</strong></span>
+                </div>
+                <div style={{ display:"flex", gap:14, flexWrap:"wrap", fontSize:12, marginTop:6, color:"#9AA1AC" }}>
+                  <span>Por aprobar: <strong style={{ color: v.porAprobar ? "#f59e0b" : "#9AA1AC" }}>{v.porAprobar}{v.porAprobar ? ` (${v.boletosPorAprobar} boletos)` : ""}</strong></span>
+                  <span>Sin usar: <strong style={{ color:"#F2F2EF" }}>{v.sinUsar}</strong></span>
+                  <span>Entregadas: <strong style={{ color:"#F2F2EF" }}>{v.entregadas}</strong></span>
+                </div>
+                {v.variantes.length > 1 && (
+                  <div style={{ fontSize:11, color:"#5a6170", marginTop:5 }}>Incluye lotes escritos como: {v.variantes.join(", ")}</div>
+                )}
               </div>
             ))}
           </div>
@@ -3704,9 +3784,10 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await onRefresh();
+    const ok = await onRefresh();
     setRefreshing(false);
-    showToast("Datos actualizados ✓", "ok");
+    if (ok === false) showToast("Conexión lenta: no se pudo actualizar. Se mantiene lo que ya tenías.", "warn");
+    else showToast("Datos actualizados ✓", "ok");
   };
 
   useEffect(() => { setFormSitio({ ...SITE_CONFIG_INICIAL, ...siteConfig }); }, [siteConfig]);
@@ -3731,33 +3812,70 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     const recaudado = comprasRifa.reduce((s,p)=>s+(p.total||0),0);
     const proyeccion = r.totalBoletos * (r.precio||0);
     const dias = Math.ceil((new Date(r.fechaSorteo) - new Date()) / 86400000);
-    const gasto = gastosRifas?.[r.id] || { promocion:0, inversion:0 };
-    const totalGasto = (Number(gasto.promocion)||0) + (Number(gasto.inversion)||0);
+    const gasto = gastosRifas?.[r.id] || {};
+    const items = listaGastos(gasto);
+    // Premios de Números Power ya pagados de esta rifa: se cuentan solos
+    const premiosPagados = (premiosPower||[]).filter(x => x.pagado && x.rifaId === r.id).length;
+    const gastoPower = premiosPagados * PREMIO_POWER_MONTO;
+    const totalGasto = items.reduce((s, x) => s + (Number(x.monto)||0), 0) + gastoPower;
     const gananciaNeta = recaudado - totalGasto;
-    return { rifa:r, vendidos, disponibles, pct, numCompras:comprasRifa.length, recaudado, proyeccion, dias, gasto, totalGasto, gananciaNeta };
+    return { rifa:r, vendidos, disponibles, pct, numCompras:comprasRifa.length, recaudado, proyeccion, dias, gasto, items, premiosPagados, gastoPower, totalGasto, gananciaNeta };
   });
   const totalRecaudadoActivas = statsPorRifa.reduce((s,x)=>s+x.recaudado,0);
   const totalVendidosActivas = statsPorRifa.reduce((s,x)=>s+x.vendidos,0);
   const totalGastoActivas = statsPorRifa.reduce((s,x)=>s+x.totalGasto,0);
   const totalGananciaActivas = totalRecaudadoActivas - totalGastoActivas;
 
-  const [editandoGastoId, setEditandoGastoId] = useState(null);
-  const [formGasto, setFormGasto] = useState({ promocion:"", inversion:"" });
-  const empezarEditarGasto = (rifaId) => {
-    const g = gastosRifas?.[rifaId] || { promocion:0, inversion:0 };
-    setFormGasto({ promocion: String(g.promocion||0), inversion: String(g.inversion||0) });
-    setEditandoGastoId(rifaId);
+  // ---- Gastos con descripción ----
+  const [agregandoGastoId, setAgregandoGastoId] = useState(null);
+  const [formGasto, setFormGasto] = useState({ descripcion:"", monto:"", fecha:"" });
+  const [borrandoGasto, setBorrandoGasto] = useState(null);
+  const empezarAgregarGasto = (rifaId) => {
+    setFormGasto({ descripcion:"", monto:"", fecha: diaDR(Date.now()) });
+    setAgregandoGastoId(rifaId);
   };
   const guardarGasto = async (rifaId) => {
-    const nuevo = {
-      ...(gastosRifas||{}),
-      [rifaId]: { promocion: Number(formGasto.promocion)||0, inversion: Number(formGasto.inversion)||0 }
-    };
+    const monto = Number(formGasto.monto);
+    if (!formGasto.descripcion.trim()) { showToast("Escribe en qué se gastó.", "warn"); return; }
+    if (!(monto > 0)) { showToast("Escribe un monto mayor que cero.", "warn"); return; }
+    const actual = gastosRifas?.[rifaId] || {};
+    const nuevoItem = { id: "G" + Date.now(), descripcion: formGasto.descripcion.trim(), monto, fecha: formGasto.fecha || diaDR(Date.now()) };
+    const nuevo = { ...(gastosRifas||{}), [rifaId]: { ...actual, items: [nuevoItem, ...(Array.isArray(actual.items) ? actual.items : [])] } };
     const ok = await saveGastosRifas(nuevo);
-    if (ok===false) showToast("Error al guardar. Intenta de nuevo.", "warn");
-    else showToast("Gastos actualizados ✓", "ok");
-    setEditandoGastoId(null);
+    if (ok===false) { showToast("Error al guardar. Intenta de nuevo.", "warn"); return; }
+    showToast("Gasto agregado ✓", "ok");
+    setAgregandoGastoId(null);
   };
+  const borrarGasto = async (rifaId, item) => {
+    const actual = gastosRifas?.[rifaId] || {};
+    const nuevoRifa = item.legacy
+      ? { ...actual, [item.legacy]: 0 }
+      : { ...actual, items: (actual.items || []).filter(x => x.id !== item.id) };
+    const ok = await saveGastosRifas({ ...(gastosRifas||{}), [rifaId]: nuevoRifa });
+    if (ok===false) showToast("Error al borrar. Intenta de nuevo.", "warn");
+    else showToast("Gasto borrado ✓", "ok");
+    setBorrandoGasto(null);
+  };
+
+  // ---- Ventas por día ----
+  // Cuenta el día en que se APROBÓ la compra (las aprobadas antes de esta
+  // función usan el día en que se registró). Se revisa la hora cada minuto,
+  // así que a las 12:00 de la madrugada "Hoy" empieza en cero solo.
+  const [ahora, setAhora] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setAhora(Date.now()), 60000); return () => clearInterval(id); }, []);
+  const [rifaVentas, setRifaVentas] = useState("todas");
+  const hoyDR = diaDR(ahora);
+  const ayerDR = diaDR(ahora - 86400000);
+  const ventasPorDia = Object.values(pendientesAprobados
+    .filter(p => (rifaVentas === "todas" || p.rifaId === rifaVentas) && !isNaN(new Date(p.aprobadaFecha || p.fecha)))
+    .reduce((acc, p) => {
+      const dia = diaDR(p.aprobadaFecha || p.fecha);
+      const d = acc[dia] || (acc[dia] = { dia, compras: 0, boletos: 0, dinero: 0 });
+      d.compras += 1; d.boletos += (p.cantidad || 0); d.dinero += (p.total || 0);
+      return acc;
+    }, {})).sort((a, b) => b.dia.localeCompare(a.dia));
+  const ventaDe = (dia) => ventasPorDia.find(v => v.dia === dia) || { dia, compras: 0, boletos: 0, dinero: 0 };
+  const maxDineroDia = Math.max(1, ...ventasPorDia.map(v => v.dinero));
 
   const descargarRespaldo = () => {
     const respaldo = {
@@ -3854,7 +3972,8 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
         const nextPend = pendActual.map(x => {
           if (x.id !== p.id) return x;
           const { captura, reservados, ...resto } = x;
-          return { ...resto, estado: "aprobado", asignados };
+          // aprobadaFecha: para el conteo de ventas por día en Contabilidad
+          return { ...resto, estado: "aprobado", asignados, aprobadaFecha: new Date().toISOString() };
         });
         tx.set(ticketsRef, { value: JSON.stringify(nextPool) });
         tx.set(pendRef, { value: nextPend });
@@ -4270,7 +4389,7 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
               </div>
               <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"14px 22px", minWidth:150 }}>
                 <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color:"#f87171" }}>{fmtMoney(totalGastoActivas)}</div>
-                <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Promoción + inversión</div>
+                <div style={{ fontSize:11, color:"#9AA1AC", textTransform:"uppercase", marginTop:3 }}>Gastos</div>
               </div>
               <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:12, padding:"14px 22px", minWidth:150 }}>
                 <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:24, color: totalGananciaActivas>=0?"#C6FF3D":"#f87171" }}>{fmtMoney(totalGananciaActivas)}</div>
@@ -4279,8 +4398,50 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
             </div>
           )}
 
+          {/* VENTAS POR DÍA */}
+          <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:20, marginBottom:20 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:14 }}>
+              <div>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:16 }}>Ventas por día</div>
+                <div style={{ fontSize:11, color:"#5a6170", marginTop:2 }}>Cuenta el día en que apruebas la compra. El día nuevo empieza a las 12:00 de la madrugada.</div>
+              </div>
+              <select value={rifaVentas} onChange={e=>setRifaVentas(e.target.value)}
+                style={{ background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"9px 12px", borderRadius:9, fontSize:13, outline:"none" }}>
+                <option value="todas">Todas las rifas</option>
+                {rifas.map(r => <option key={r.id} value={r.id}>{r.titulo}</option>)}
+              </select>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10, marginBottom:16 }}>
+              {[["Hoy", hoyDR, "#C6FF3D"], ["Ayer", ayerDR, "#9AA1AC"]].map(([titulo, dia, color]) => {
+                const v = ventaDe(dia);
+                return (
+                  <div key={titulo} style={{ background:"#0D0F12", border:`1px solid ${titulo==="Hoy" ? "rgba(198,255,61,0.35)" : "#232830"}`, borderRadius:11, padding:"12px 16px" }}>
+                    <div style={{ fontSize:11, fontWeight:800, color, textTransform:"uppercase" }}>{titulo} · {etiquetaDia(dia)}</div>
+                    <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:22, marginTop:4 }}>{v.boletos} boletos</div>
+                    <div style={{ fontSize:13, color:"#9AA1AC", marginTop:2 }}>{fmtMoney(v.dinero)} · {v.compras} compra{v.compras!==1?"s":""}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {ventasPorDia.length === 0 ? (
+              <p style={{ fontSize:13, color:"#9AA1AC" }}>Todavía no hay ventas aprobadas.</p>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:360, overflowY:"auto" }}>
+                {ventasPorDia.slice(0, 60).map(v => (
+                  <div key={v.dia} style={{ position:"relative", background:"#0D0F12", borderRadius:8, padding:"9px 12px", overflow:"hidden" }}>
+                    <div style={{ position:"absolute", inset:0, width:`${Math.round(v.dinero / maxDineroDia * 100)}%`, background:"rgba(198,255,61,0.07)" }} />
+                    <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:8, fontSize:13, flexWrap:"wrap" }}>
+                      <span style={{ fontWeight: v.dia===hoyDR ? 800 : 600, color: v.dia===hoyDR ? "#C6FF3D" : "#F2F2EF", textTransform:"capitalize" }}>{v.dia===hoyDR ? "Hoy · " : ""}{etiquetaDia(v.dia)}</span>
+                      <span style={{ color:"#9AA1AC" }}><strong style={{ color:"#F2F2EF" }}>{v.boletos}</strong> boletos · <strong style={{ color:"#C6FF3D" }}>{fmtMoney(v.dinero)}</strong> · {v.compras} compra{v.compras!==1?"s":""}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-            {statsPorRifa.map(({rifa:r, vendidos, disponibles, pct, numCompras, recaudado, proyeccion, dias, gasto, totalGasto, gananciaNeta}, idx)=>{
+            {statsPorRifa.map(({rifa:r, vendidos, disponibles, pct, numCompras, recaudado, proyeccion, dias, items, premiosPagados, gastoPower, totalGasto, gananciaNeta}, idx)=>{
               const color = COLORES_RIFA[idx % COLORES_RIFA.length];
               return (
                 <div key={r.id} style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:20, borderLeft:`3px solid ${color}` }}>
@@ -4321,52 +4482,87 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
                   </div>
 
                   <div style={{ marginTop:16, paddingTop:16, borderTop:"1px solid #232830" }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: editandoGastoId===r.id ? 12 : 0 }}>
-                      <span style={{ fontSize:12, fontWeight:700, color:"#9AA1AC", textTransform:"uppercase" }}>Promoción e inversión</span>
-                      {editandoGastoId!==r.id && (
-                        <button onClick={()=>empezarEditarGasto(r.id)} style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #333", color:"#F2F2EF", fontWeight:700, fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer" }}>
-                          <Pencil size={12}/> Editar
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, gap:8 }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:"#9AA1AC", textTransform:"uppercase" }}>Gastos de esta rifa</span>
+                      {agregandoGastoId!==r.id && (
+                        <button onClick={()=>empezarAgregarGasto(r.id)} style={{ display:"flex", alignItems:"center", gap:6, background:"#232830", border:"1px solid #333", color:"#F2F2EF", fontWeight:700, fontSize:12, padding:"6px 12px", borderRadius:8, cursor:"pointer" }}>
+                          <Plus size={12}/> Agregar gasto
                         </button>
                       )}
                     </div>
 
-                    {editandoGastoId!==r.id ? (
-                      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10 }}>
-                        <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
-                          <div style={{ fontSize:14, fontWeight:800 }}>{fmtMoney(gasto.promocion||0)}</div>
-                          <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>promoción</div>
-                        </div>
-                        <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
-                          <div style={{ fontSize:14, fontWeight:800 }}>{fmtMoney(gasto.inversion||0)}</div>
-                          <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>inversión (premio, etc.)</div>
-                        </div>
-                        <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
-                          <div style={{ fontSize:14, fontWeight:800, color: gananciaNeta>=0?"#C6FF3D":"#f87171" }}>{fmtMoney(gananciaNeta)}</div>
-                          <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>ganancia neta</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:12 }}>
+                    {agregandoGastoId===r.id && (
+                      <div style={{ background:"#0D0F12", border:"1px solid #232830", borderRadius:10, padding:12, marginBottom:10 }}>
+                        <label style={{ display:"block", marginBottom:10 }}>
+                          <span style={{ display:"block", fontSize:11, color:"#9AA1AC", marginBottom:4 }}>¿En qué se gastó?</span>
+                          <input value={formGasto.descripcion} onChange={e=>setFormGasto(f=>({...f, descripcion:e.target.value}))} placeholder="Ej: Impresión de tarjetas"
+                            style={{ width:"100%", background:"#14171C", border:"1px solid #333", color:"#F2F2EF", padding:"10px 12px", borderRadius:8, fontSize:14, outline:"none" }} />
+                        </label>
+                        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:10, marginBottom:12 }}>
                           <label>
-                            <span style={{ display:"block", fontSize:11, color:"#9AA1AC", marginBottom:4 }}>Promoción (RD$)</span>
-                            <input type="number" min="0" value={formGasto.promocion}
-                              onChange={e=>setFormGasto(f=>({...f, promocion:e.target.value}))}
-                              style={{ width:"100%", background:"#0D0F12", border:"1px solid #333", color:"#F2F2EF", padding:"10px 12px", borderRadius:8, fontSize:14, outline:"none" }} />
+                            <span style={{ display:"block", fontSize:11, color:"#9AA1AC", marginBottom:4 }}>Monto (RD$)</span>
+                            <input type="number" min="0" value={formGasto.monto} onChange={e=>setFormGasto(f=>({...f, monto:e.target.value}))} placeholder="0"
+                              style={{ width:"100%", background:"#14171C", border:"1px solid #333", color:"#F2F2EF", padding:"10px 12px", borderRadius:8, fontSize:14, outline:"none" }} />
                           </label>
                           <label>
-                            <span style={{ display:"block", fontSize:11, color:"#9AA1AC", marginBottom:4 }}>Inversión (RD$)</span>
-                            <input type="number" min="0" value={formGasto.inversion}
-                              onChange={e=>setFormGasto(f=>({...f, inversion:e.target.value}))}
-                              style={{ width:"100%", background:"#0D0F12", border:"1px solid #333", color:"#F2F2EF", padding:"10px 12px", borderRadius:8, fontSize:14, outline:"none" }} />
+                            <span style={{ display:"block", fontSize:11, color:"#9AA1AC", marginBottom:4 }}>Fecha</span>
+                            <input type="date" value={formGasto.fecha} onChange={e=>setFormGasto(f=>({...f, fecha:e.target.value}))}
+                              style={{ width:"100%", background:"#14171C", border:"1px solid #333", color:"#F2F2EF", padding:"9px 12px", borderRadius:8, fontSize:14, outline:"none", colorScheme:"dark" }} />
                           </label>
                         </div>
                         <div style={{ display:"flex", gap:10 }}>
-                          <button onClick={()=>guardarGasto(r.id)} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Guardar</button>
-                          <button onClick={()=>setEditandoGastoId(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Cancelar</button>
+                          <button onClick={()=>guardarGasto(r.id)} style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Guardar gasto</button>
+                          <button onClick={()=>setAgregandoGastoId(null)} style={{ background:"transparent", border:"1px solid #333", color:"#9AA1AC", fontWeight:700, fontSize:13, padding:"10px 18px", borderRadius:9, cursor:"pointer" }}>Cancelar</button>
                         </div>
                       </div>
                     )}
+
+                    <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                      {items.length===0 && premiosPagados===0 && <p style={{ fontSize:12, color:"#5a6170" }}>Sin gastos anotados.</p>}
+                      {items.map(item => (
+                        <div key={item.id} style={{ background:"#0D0F12", borderRadius:8, padding:"9px 12px" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+                            <div style={{ minWidth:0 }}>
+                              <div style={{ fontSize:13, fontWeight:700 }}>{item.descripcion}</div>
+                              <div style={{ fontSize:11, color:"#5a6170" }}>{item.fecha ? etiquetaDia(item.fecha) : "Anotado antes"}</div>
+                            </div>
+                            <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+                              <span style={{ fontSize:14, fontWeight:800, color:"#f87171" }}>{fmtMoney(item.monto)}</span>
+                              {!(borrandoGasto && borrandoGasto.rifaId===r.id && borrandoGasto.id===item.id) && (
+                                <button onClick={()=>setBorrandoGasto({ rifaId:r.id, id:item.id })} title="Borrar" style={{ background:"none", border:"none", color:"#5a6170", cursor:"pointer", display:"flex", padding:4 }}>
+                                  <Trash2 size={14}/>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {borrandoGasto && borrandoGasto.rifaId===r.id && borrandoGasto.id===item.id && (
+                            <div style={{ marginTop:8 }}>
+                              <ConfirmInline mensaje={`¿Borrar "${item.descripcion}" (${fmtMoney(item.monto)})?`} onSi={()=>borrarGasto(r.id, item)} onNo={()=>setBorrandoGasto(null)} />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {premiosPagados > 0 && (
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, background:"#0D0F12", borderRadius:8, padding:"9px 12px" }}>
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:700 }}>⚡ Premios Números Power pagados</div>
+                            <div style={{ fontSize:11, color:"#5a6170" }}>{premiosPagados} × {fmtMoney(PREMIO_POWER_MONTO)} · se suma solo</div>
+                          </div>
+                          <span style={{ fontSize:14, fontWeight:800, color:"#f87171" }}>{fmtMoney(gastoPower)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginTop:12 }}>
+                      <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                        <div style={{ fontSize:14, fontWeight:800, color:"#f87171" }}>{fmtMoney(totalGasto)}</div>
+                        <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>total de gastos</div>
+                      </div>
+                      <div style={{ background:"#0D0F12", borderRadius:9, padding:"10px 14px" }}>
+                        <div style={{ fontSize:14, fontWeight:800, color: gananciaNeta>=0?"#C6FF3D":"#f87171" }}>{fmtMoney(gananciaNeta)}</div>
+                        <div style={{ fontSize:10, color:"#9AA1AC", textTransform:"uppercase" }}>ganancia neta</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
