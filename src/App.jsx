@@ -4074,6 +4074,129 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
     }, (dataUrl) => setImgBoleto(dataUrl));
   };
 
+  // ---- Asignar números a mano ----
+  // modo "restaurar": le devuelve a una compra aprobada los números que se
+  //   le habían borrado (no crea otra venta, así no se cuenta doble).
+  // modo "nuevo": crea una compra aprobada con números exactos elegidos.
+  // Solo usa números que de verdad estén libres (ni vendidos ni apartados
+  // para una tarjeta QR), revisado en el mismo momento de guardar.
+  const asignarAMano = async ({ modo, compraId, rifaId, nombre, telefono, numeros, metodo }) => {
+    const ticketsRef = doc(db, "hiraldopower", "tickets_" + rifaId);
+    const pendRef = doc(db, "hiraldopower", "pending");
+    const rifa = rifas.find(r => r.id === rifaId);
+    let asignados = [], nextPoolFinal = null, nextPendFinal = null, persona = null;
+    try {
+      await runTransaction(db, async (tx) => {
+        const tSnap = await tx.get(ticketsRef);
+        const pSnap = await tx.get(pendRef);
+        const raw = tSnap.exists() ? tSnap.data().value : null;
+        const pool = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+        const pendActual = pSnap.exists() ? (pSnap.data().value || []) : [];
+        const largo = (Object.keys(pool)[0] || "").length;
+        const norm = (n) => { const d = String(n).trim().replace(/^#/, ""); return /^\d+$/.test(d) && largo ? d.padStart(largo, "0") : d; };
+        let lista, compra = null;
+        if (modo === "restaurar") {
+          compra = pendActual.find(x => x.id === compraId && x.estado === "aprobado");
+          if (!compra) throw new Error("COMPRA_NO_ENCONTRADA");
+          persona = { nombre: compra.nombre, telefono: compra.telefono, fecha: compra.fecha };
+          lista = (compra.asignados || []).filter(n => n in pool && !pool[n]);
+        } else {
+          persona = { nombre: nombre.trim(), telefono: telefono.trim(), fecha: new Date().toISOString() };
+          lista = [...new Set(numeros.map(norm).filter(Boolean))];
+        }
+        if (lista.length === 0) throw new Error("NADA_QUE_ASIGNAR");
+        const noExisten = lista.filter(n => !(n in pool));
+        if (noExisten.length) throw Object.assign(new Error("NO_EXISTE"), { nums: noExisten });
+        const ocupados = lista.filter(n => pool[n]);
+        if (ocupados.length) throw Object.assign(new Error("OCUPADO"), { nums: ocupados });
+        const apartados = numerosReservados(pendActual, rifaId);
+        const enTarjeta = lista.filter(n => apartados.has(n));
+        if (enTarjeta.length) throw Object.assign(new Error("APARTADO"), { nums: enTarjeta });
+        const nextPool = { ...pool };
+        lista.forEach(n => { nextPool[n] = { nombre: persona.nombre, telefono: persona.telefono, fecha: persona.fecha }; });
+        const ahoraIso = new Date().toISOString();
+        const nextPend = modo === "restaurar"
+          ? pendActual.map(x => x.id === compraId ? { ...x, restauradaFecha: ahoraIso } : x)
+          : [...pendActual, {
+              id: "M" + Date.now(), nombre: persona.nombre, telefono: persona.telefono,
+              metodo: (metodo || "Efectivo") + " (asignado a mano)", captura: "",
+              cantidad: lista.length, total: lista.length * (rifa?.precio || 0),
+              rifaId, rifaTitulo: rifa?.titulo || "", fecha: ahoraIso, estado: "aprobado",
+              asignados: lista, aprobadaFecha: ahoraIso,
+            }];
+        tx.set(ticketsRef, { value: JSON.stringify(nextPool) });
+        tx.set(pendRef, { value: nextPend });
+        asignados = lista; nextPoolFinal = nextPool; nextPendFinal = nextPend;
+      });
+    } catch (e) {
+      console.error("asignar a mano error:", e);
+      const nums = (e.nums || []).join(", ");
+      if (e.message === "OCUPADO") showToast(`Esos números ya son de otro comprador: ${nums}`, "warn");
+      else if (e.message === "APARTADO") showToast(`Esos números están apartados para una tarjeta QR por aprobar: ${nums}`, "warn");
+      else if (e.message === "NO_EXISTE") showToast(`Esos números no existen en esta rifa: ${nums}`, "warn");
+      else if (e.message === "NADA_QUE_ASIGNAR") showToast(modo === "restaurar" ? "Ninguno de sus números está libre ahora." : "Escribe al menos un número.", "warn");
+      else if (e.message === "COMPRA_NO_ENCONTRADA") showToast("No se encontró esa compra. Toca Actualizar e intenta de nuevo.", "warn");
+      else showToast("No se pudo guardar. Revisa la conexión e intenta de nuevo.", "warn");
+      return false;
+    }
+    setBoletosLocal(b => ({ ...b, [rifaId]: nextPoolFinal }));
+    setPendientesLocal(nextPendFinal);
+    showToast(`${asignados.length} número${asignados.length>1?"s":""} asignado${asignados.length>1?"s":""} a ${persona.nombre}: ${asignados.join(", ")}`, "ok");
+
+    // Números Power: si alguno lo es y todavía no estaba anotado ese premio
+    // (por ejemplo, la primera vez que se le asignó), se registra.
+    const yaAnotados = new Set((premiosPower || []).filter(x => x.rifaId === rifaId).map(x => x.numero));
+    const ganadoresPower = asignados.filter(n => (powerNumbers || []).includes(n) && !yaAnotados.has(n));
+    if (ganadoresPower.length > 0) {
+      try {
+        let nextPremiosFinal = null;
+        await runTransaction(db, async (tx) => {
+          const premioRef = doc(db, "hiraldopower", "premiosPower");
+          const snap = await tx.get(premioRef);
+          const actual = snap.exists() ? (snap.data().value || []) : [];
+          const nuevos = ganadoresPower.filter(n => !actual.some(x => x.rifaId === rifaId && x.numero === n)).map(num => ({
+            id: "PW" + Date.now() + "-" + num, numero: num, nombre: persona.nombre, telefono: persona.telefono,
+            rifaId, rifaTitulo: tituloRifa(rifaId), fecha: new Date().toISOString(), pagado: false,
+          }));
+          nextPremiosFinal = [...nuevos, ...actual];
+          tx.set(premioRef, { value: nextPremiosFinal });
+        });
+        setPremiosPowerLocal(nextPremiosFinal);
+        ganadoresPower.forEach(num => showToast(`⚡ ¡NÚMERO POWER! Boleto #${num} de ${persona.nombre} gana RD$${PREMIO_POWER_MONTO.toLocaleString("es-DO")}`, "power"));
+      } catch (e) {
+        console.error("registrar premio power error:", e);
+        showToast("¡Salió un Número Power, pero hubo un error al registrarlo! Anótalo a mano.", "warn");
+      }
+    }
+
+    setAvisoWhatsapp({ nombre: persona.nombre, telefono: persona.telefono, asignados, rifaTitulo: tituloRifa(rifaId), ganadoresPower });
+    setImgBoleto(null);
+    generarImagenBoleto({
+      nombre: persona.nombre, telefono: persona.telefono, asignados,
+      rifaTitulo: tituloRifa(rifaId), rifaImagen: rifa?.imagen || "", instagram: siteConfig?.instagram || "",
+    }, (dataUrl) => setImgBoleto(dataUrl));
+    return true;
+  };
+  const [manoAbierto, setManoAbierto] = useState(false);
+  const [buscarBorrados, setBuscarBorrados] = useState("");
+  const [formMano, setFormMano] = useState({ rifaId: "", nombre: "", telefono: "", numeros: "", metodo: "Efectivo" });
+  const [guardandoMano, setGuardandoMano] = useState(false);
+  // Compras aprobadas a las que se les borró uno o más números (que siguen libres)
+  const comprasConBorrados = pendientesAprobados
+    .map(p => {
+      const pool = boletos?.[p.rifaId] || {};
+      const libres = (p.asignados || []).filter(n => n in pool && !pool[n]);
+      return { p, libres };
+    })
+    .filter(x => x.libres.length > 0)
+    .filter(({ p }) => {
+      const q = buscarBorrados.trim().toLowerCase();
+      if (!q) return true;
+      const qd = q.replace(/\D/g, "");
+      return (p.nombre || "").toLowerCase().includes(q) || (qd && (p.telefono || "").replace(/\D/g, "").includes(qd));
+    })
+    .sort((a, b) => new Date(b.p.aprobadaFecha || b.p.fecha) - new Date(a.p.aprobadaFecha || a.p.fecha));
+
   const rechazar = async (p) => {
     const pendRef = doc(db, "hiraldopower", "pending");
     let nextPendFinal = null;
@@ -4790,6 +4913,99 @@ function Admin({ boletos, saveBoletos, setBoletosLocal, pendientes, savePendient
       {/* ---- TAB: BOLETOS ---- */}
       {tabAdmin==="boletos" && (
         <div>
+          <button onClick={()=>{ setManoAbierto(v=>!v); setFormMano(f=>({ ...f, rifaId: f.rifaId || (rifas.find(r=>r.activa)?.id || "") })); }}
+            style={{ display:"flex", alignItems:"center", gap:8, background: manoAbierto ? "#232830" : "#C6FF3D", color: manoAbierto ? "#F2F2EF" : "#0D0F12", border:"none", fontWeight:800, fontSize:13, padding:"11px 16px", borderRadius:10, cursor:"pointer", marginBottom:16 }}>
+            {manoAbierto ? <X size={15}/> : <Plus size={15}/>} {manoAbierto ? "Cerrar" : "Asignar números a mano"}
+          </button>
+
+          {manoAbierto && (
+            <div style={{ display:"flex", flexDirection:"column", gap:16, marginBottom:22 }}>
+              {/* DEVOLVER NÚMEROS BORRADOS */}
+              <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:18 }}>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:4 }}>Devolver números borrados</div>
+                <p style={{ fontSize:12, color:"#9AA1AC", lineHeight:1.5, marginBottom:12 }}>
+                  Clientes a los que se les borraron números que todavía están libres. Al devolverlos no se cuenta otra venta (la compra ya estaba anotada).
+                </p>
+                <input value={buscarBorrados} onChange={e=>setBuscarBorrados(e.target.value)} placeholder="Buscar por nombre o teléfono…"
+                  style={{ width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:10 }} />
+                {comprasConBorrados.length === 0 ? (
+                  <p style={{ fontSize:12, color:"#5a6170" }}>{buscarBorrados ? "No hay resultados." : "No hay clientes con números borrados."}</p>
+                ) : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:8, maxHeight:340, overflowY:"auto" }}>
+                    {comprasConBorrados.slice(0, 40).map(({ p, libres }) => (
+                      <div key={p.id} style={{ flexShrink:0, background:"#0D0F12", borderRadius:9, padding:"11px 13px" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
+                          <span style={{ fontWeight:800, fontSize:14 }}>{p.nombre}</span>
+                          <span style={{ fontSize:12, color:"#9AA1AC" }}>{p.telefono} · {tituloRifa(p.rifaId)}</span>
+                        </div>
+                        <div style={{ fontSize:12, color:"#9AA1AC", margin:"6px 0 8px" }}>
+                          Libres para devolver: <strong style={{ color:"#C6FF3D" }}>{libres.map(n=>"#"+n).join(", ")}</strong>
+                          {libres.length < (p.asignados||[]).length && <span> · {(p.asignados||[]).length - libres.length} ya son de otro comprador</span>}
+                        </div>
+                        <button disabled={guardandoMano} onClick={async ()=>{ setGuardandoMano(true); await asignarAMano({ modo:"restaurar", compraId:p.id, rifaId:p.rifaId }); setGuardandoMano(false); }}
+                          style={{ background:"#C6FF3D", color:"#0D0F12", border:"none", fontWeight:800, fontSize:12, padding:"9px 14px", borderRadius:8, cursor:"pointer", opacity: guardandoMano ? 0.6 : 1 }}>
+                          Devolverle {libres.length === 1 ? "su número" : `sus ${libres.length} números`}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ASIGNAR NÚMEROS NUEVOS */}
+              <div style={{ background:"#14171C", border:"1px solid #232830", borderRadius:14, padding:18 }}>
+                <div style={{ fontFamily:"'Arial Black',sans-serif", fontSize:14, marginBottom:4 }}>Asignar números específicos</div>
+                <p style={{ fontSize:12, color:"#9AA1AC", lineHeight:1.5, marginBottom:12 }}>
+                  Para una venta nueva con números elegidos. Se guarda como compra aprobada y cuenta en Contabilidad. Solo se aceptan números libres.
+                </p>
+                {(() => {
+                  const campo = { width:"100%", background:"#0D0F12", border:"1px solid #232830", color:"#F2F2EF", padding:"11px 12px", borderRadius:9, fontSize:14, outline:"none", boxSizing:"border-box" };
+                  const etq = { display:"block", fontSize:12, fontWeight:700, color:"#9AA1AC", marginBottom:6 };
+                  const lista = formMano.numeros.split(/[\s,;]+/).filter(Boolean);
+                  const rifaSel = rifas.find(r => r.id === formMano.rifaId);
+                  const valido = rifaSel && formMano.nombre.trim().length >= 2 && formMano.telefono.replace(/\D/g,"").length >= 10 && lista.length > 0;
+                  return (
+                    <>
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:12, marginBottom:12 }}>
+                        <label><span style={etq}>Rifa</span>
+                          <select value={formMano.rifaId} onChange={e=>setFormMano(f=>({...f, rifaId:e.target.value}))} style={campo}>
+                            {rifas.filter(r=>r.activa).map(r => <option key={r.id} value={r.id}>{r.titulo}</option>)}
+                          </select>
+                        </label>
+                        <label><span style={etq}>Nombre y apellido</span>
+                          <input value={formMano.nombre} onChange={e=>setFormMano(f=>({...f, nombre:e.target.value}))} placeholder="Ej: María Pérez" style={campo} />
+                        </label>
+                        <label><span style={etq}>Teléfono</span>
+                          <input value={formMano.telefono} onChange={e=>setFormMano(f=>({...f, telefono:e.target.value}))} placeholder="809-000-0000" style={campo} />
+                        </label>
+                        <label><span style={etq}>Cómo pagó</span>
+                          <select value={formMano.metodo} onChange={e=>setFormMano(f=>({...f, metodo:e.target.value}))} style={campo}>
+                            {["Efectivo", ...(metodosPago||[]).map(m=>m.nombre).filter(n => n && !/efectivo/i.test(n))].map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                      <label style={{ display:"block", marginBottom:8 }}><span style={etq}>Números (separados por coma o espacio)</span>
+                        <input value={formMano.numeros} onChange={e=>setFormMano(f=>({...f, numeros:e.target.value}))} placeholder="Ej: 0123, 4567, 8910" style={campo} />
+                      </label>
+                      {rifaSel && lista.length > 0 && (
+                        <p style={{ fontSize:12, color:"#9AA1AC", marginBottom:12 }}>{lista.length} número{lista.length>1?"s":""} · {fmtMoney(lista.length * (rifaSel.precio || 0))}</p>
+                      )}
+                      <button disabled={!valido || guardandoMano} onClick={async ()=>{
+                          setGuardandoMano(true);
+                          const ok = await asignarAMano({ modo:"nuevo", rifaId:formMano.rifaId, nombre:formMano.nombre, telefono:formMano.telefono, numeros:lista, metodo:formMano.metodo });
+                          setGuardandoMano(false);
+                          if (ok) setFormMano(f=>({ ...f, nombre:"", telefono:"", numeros:"" }));
+                        }}
+                        style={{ background: valido ? "#C6FF3D" : "#232830", color: valido ? "#0D0F12" : "#5a6170", border:"none", fontWeight:800, fontSize:13, padding:"11px 18px", borderRadius:9, cursor: valido ? "pointer" : "default", opacity: guardandoMano ? 0.6 : 1 }}>
+                        {guardandoMano ? "Guardando…" : "Asignar estos números"}
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
           {vendidosTodos.length>0 && (
             <p style={{ color:"#9AA1AC", fontSize:13, marginBottom:14 }}>{vendidosTodos.length} boleto{vendidosTodos.length!==1?"s":""} vendido{vendidosTodos.length!==1?"s":""} en total. Toca la papelera para liberar un boleto (vuelve a quedar disponible para la venta).</p>
           )}
